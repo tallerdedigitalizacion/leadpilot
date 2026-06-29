@@ -13,6 +13,9 @@ export interface PageSpeedScore {
   accessibility: number;
   seo: number;
   bestPractices: number;
+  lcp?: number;        // Largest Contentful Paint, seconds
+  tbt?: number;        // Total Blocking Time, ms
+  speedIndex?: number; // Speed Index, seconds
   fetchedAt: number;
 }
 
@@ -38,7 +41,7 @@ export interface LeadItem {
   sentAt?: number;
   pagespeedMobile?: PageSpeedScore;
   pagespeedDesktop?: PageSpeedScore;
-  aiWebAnalysis?: string;
+  aiWebAnalysis?: string;   // 6-field structured text from Claude
   myNotes?: string;
   reportHtmlS3Key?: string;
   reportPdfS3Key?: string;
