@@ -16,15 +16,9 @@
   },
   "context": {
     "@aws-cdk/aws-apigateway:usagePlanKeyOrderInsensitiveId": true,
-    "@aws-cdk/aws-cloudwatch-actions:alarm": true,
-    "@aws-cdk/aws-ecs:removeDefaultDesiredCount": true,
     "@aws-cdk/aws-iam:minimizePolicies": true,
     "@aws-cdk/aws-iam:standardizedServicePrincipals": true,
-    "@aws-cdk/core:boostrapQualifier": "hnb659fds",
     "@aws-cdk/core:checkSecretUsage": true,
-    "@aws-cdk/core:enableStackNameDuplicates": "true",
-    "@aws-cdk/core:stackRelativeExports": "true",
-    "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],
-    "aws-cdk:enableDiffNoFail": "true"
+    "@aws-cdk/core:target-partitions": ["aws", "aws-cn"]
   }
 }
