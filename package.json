@@ -1,0 +1,14 @@
+{
+  "name": "leadpilot",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/infra",
+    "packages/functions/*",
+    "packages/frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "deploy": "npm run deploy -w packages/infra"
+  }
+}

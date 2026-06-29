@@ -1,0 +1,8 @@
+node_modules/
+dist/
+cdk.out/
+.env.local
+*.js.map
+*.d.ts
+!jest.config.js
+.DS_Store

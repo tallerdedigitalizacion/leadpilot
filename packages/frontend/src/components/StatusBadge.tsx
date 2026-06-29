@@ -1,0 +1,21 @@
+import type { LeadStatus } from '../types/lead';
+
+const CONFIG: Record<LeadStatus, { label: string; className: string }> = {
+  REVIEWING:    { label: 'Revisando',     className: 'bg-yellow-100 text-yellow-800' },
+  DISCARDED:    { label: 'Descartado',    className: 'bg-gray-100 text-gray-500' },
+  QUALIFIED:    { label: 'Calificado',    className: 'bg-blue-100 text-blue-800' },
+  ANALYZED:     { label: 'Analizado',     className: 'bg-indigo-100 text-indigo-800' },
+  SENT:         { label: 'Enviado',       className: 'bg-purple-100 text-purple-800' },
+  CALLED:       { label: 'Llamado',       className: 'bg-teal-100 text-teal-800' },
+  RESPONDED:    { label: 'Respondió',     className: 'bg-green-100 text-green-800' },
+  NO_RESPONSE:  { label: 'Sin respuesta', className: 'bg-red-100 text-red-700' },
+};
+
+export default function StatusBadge({ status }: { status: LeadStatus }) {
+  const { label, className } = CONFIG[status];
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${className}`}>
+      {label}
+    </span>
+  );
+}
