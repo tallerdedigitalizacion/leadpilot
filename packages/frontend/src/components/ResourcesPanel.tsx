@@ -8,11 +8,29 @@ interface Props {
   onLeadUpdate: (lead: LeadItem) => void;
 }
 
+function buildCalendarLink(lead: LeadItem): string {
+  const followUpDate = new Date((lead.sentAt ?? Date.now()) + 7 * 24 * 60 * 60 * 1000);
+  const nextDay = new Date(followUpDate.getTime() + 24 * 60 * 60 * 1000);
+  const fmtDay = (d: Date) => d.toISOString().split('T')[0].replace(/-/g, '');
+  const leadUrl = `${window.location.origin}/leads/${lead.leadId}`;
+  const details = [
+    `LeadPilot: ${leadUrl}`,
+    lead.phone ? `Tel: ${lead.phone}` : '',
+    lead.url ? `Web: ${lead.url}` : '',
+  ].filter(Boolean).join('\n');
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: `Seguimiento — ${lead.businessName}`,
+    dates: `${fmtDay(followUpDate)}/${fmtDay(nextDay)}`,
+    details,
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
 export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   const [emailSubject, setEmailSubject] = useState(lead.emailSubject ?? '');
   const [emailBody, setEmailBody]       = useState(lead.emailBody ?? '');
   const [linkedinPost, setLinkedinPost] = useState(lead.linkedinPost ?? '');
-  const [sending, setSending]           = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -36,7 +54,7 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
     let attempts = 0;
     pollRef.current = setInterval(async () => {
       attempts++;
-      if (attempts > 40) { // 40 × 5s = 200s → timeout visual
+      if (attempts > 40) {
         clearInterval(pollRef.current!);
         pollRef.current = null;
         setError('La generación tardó más de lo esperado. Refresca en un momento.');
@@ -61,29 +79,12 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
     setError(null);
     try {
       await api.triggerReport(lead.leadId);
-      // El flag isGeneratingReport=true llega con el siguiente poll — refrescamos ya
       const updated = await api.getLead(lead.leadId);
       onLeadUpdate(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al iniciar la generación');
     }
   };
-
-  const handleSendEmail = async () => {
-    if (!lead.email) return;
-    setSending(true);
-    setError(null);
-    try {
-      const updated = await api.sendEmail(lead.leadId);
-      onLeadUpdate(updated);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error enviando email');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const canSend = lead.status === 'ANALYZED' && hasReport && Boolean(lead.email);
 
   return (
     <div className="space-y-5">
@@ -160,30 +161,17 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 mb-1 block">Cuerpo</label>
+            <label className="text-xs text-gray-500 mb-1 block">Cuerpo (HTML)</label>
             <textarea
               value={emailBody}
               onChange={(e) => setEmailBody(e.target.value)}
-              rows={10}
+              rows={12}
               className="w-full border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand"
             />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <CopyButton text={emailSubject} label="Copiar asunto" />
             <CopyButton text={emailBody}    label="Copiar cuerpo" />
-            <CopyButton text={`${emailSubject}\n\n${emailBody}`} label="Copiar todo" />
-            {canSend && (
-              <button
-                onClick={handleSendEmail}
-                disabled={sending}
-                className="px-3 py-1.5 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50"
-              >
-                {sending ? 'Enviando…' : `Enviar a ${lead.email}`}
-              </button>
-            )}
-            {!lead.email && (
-              <span className="text-xs text-gray-400">Sin email — envía manualmente</span>
-            )}
           </div>
         </section>
       )}
@@ -209,18 +197,14 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
       <section className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-gray-700">Seguimiento</h3>
         <div className="flex items-center gap-3 flex-wrap">
-          {lead.calendarLink ? (
-            <a
-              href={lead.calendarLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700"
-            >
-              Abrir en Google Calendar
-            </a>
-          ) : (
-            <span className="text-xs text-gray-400">Calendar link disponible tras generar reporte</span>
-          )}
+          <a
+            href={buildCalendarLink(lead)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700"
+          >
+            Abrir en Google Calendar
+          </a>
           {lead.phone && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-700 font-mono">{lead.phone}</span>

@@ -58,13 +58,7 @@ export const api = {
 
   updatePagespeed(leadId: string, data: {
     strategy: 'mobile' | 'desktop';
-    performance: number;
-    accessibility?: number;
-    seo?: number;
-    bestPractices?: number;
-    lcp?: number;
-    tbt?: number;
-    speedIndex?: number;
+    rawText: string;
   }): Promise<LeadItem> {
     return request(`/leads/${leadId}/pagespeed`, {
       method: 'PATCH',

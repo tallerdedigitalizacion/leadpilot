@@ -42,6 +42,8 @@ export interface LeadItem {
   sentAt?: number;
   pagespeedMobile?: PageSpeedScore;
   pagespeedDesktop?: PageSpeedScore;
+  pagespeedMobileRaw?: string;
+  pagespeedDesktopRaw?: string;
   aiWebAnalysis?: string;
   myNotes?: string;
   isGeneratingReport?: boolean;

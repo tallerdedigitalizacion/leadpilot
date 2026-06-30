@@ -37,7 +37,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     Destination: { ToAddresses: [lead.email] },
     Message: {
       Subject: { Data: lead.emailSubject, Charset: 'UTF-8' },
-      Body:    { Text: { Data: lead.emailBody, Charset: 'UTF-8' } },
+      Body:    { Html: { Data: lead.emailBody, Charset: 'UTF-8' } },
     },
   }));
 

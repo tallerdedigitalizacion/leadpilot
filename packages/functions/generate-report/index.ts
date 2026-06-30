@@ -54,6 +54,8 @@ function generateCalendarLink(lead: LeadItem): string {
 async function generateReportHtml(client: Anthropic, lead: LeadItem): Promise<string> {
   const m = lead.pagespeedMobile;
   const d = lead.pagespeedDesktop;
+  const mRaw = lead.pagespeedMobileRaw;
+  const dRaw = lead.pagespeedDesktopRaw;
   const id = shortId(lead.leadId);
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -92,6 +94,9 @@ SECCIONES EN ORDEN:
    - Best Practices: ${m?.bestPractices ?? 'N/A'}/100
    (Desktop: Performance ${d?.performance ?? 'N/A'}, SEO ${d?.seo ?? 'N/A'})
    Cada barra: label a la izquierda, valor a la derecha en color, barra de fondo gris con relleno en color proporcional al score
+
+   ${mRaw ? `PageSpeed Mobile — datos completos pegados por el consultor:\n${mRaw}` : ''}
+   ${dRaw ? `PageSpeed Desktop — datos completos pegados por el consultor:\n${dRaw}` : ''}
 
 3. ISSUES IDENTIFIED
    Basándote en el análisis técnico siguiente, genera la lista de problemas:
@@ -160,41 +165,45 @@ async function generateEmail(
 
 Lo primero que tienes que hacer es localizar la sección "Bottom line" del reporte y leerla con atención — ahí está el argumento central que debe guiar todo el email.
 
-Con esa información genera el email con este formato exacto:
+Con esa información genera el email. El asunto en la primera línea como texto plano. El cuerpo del email en HTML puro (sin etiquetas <html>/<head>/<body>, solo el contenido — usa <p>, <ul>, <li>, <strong>, <a>, <hr>, <br>).
+
+Formato exacto:
 
 Subject: [Extrae el problema más concreto y llamativo del Bottom line y conviértelo en una frase de impacto de menos de 10 palabras que incluya el dominio. Ejemplo: "Your Google Ads are funding a 47/100 site — glasswellservice.com"]
 
-Hi,
+<p>Hi,</p>
 
-I came across [dominio] while researching [sector] businesses in [ciudad].
+<p>I came across [dominio] while researching [sector] businesses in [ciudad].</p>
 
-[Toma el argumento central del Bottom line y conviértelo en 2-3 frases en lenguaje de dueño de negocio. Sin jerga técnica. Debe sonar como alguien que encontró algo importante y quiere compartirlo, no como un vendedor. Este es el párrafo más importante del email — si no resuena aquí, nada de lo que sigue importa.]
+<p>[Toma el argumento central del Bottom line y conviértelo en 2-3 frases en lenguaje de dueño de negocio. Sin jerga técnica. Debe sonar como alguien que encontró algo importante y quiere compartirlo, no como un vendedor. Este es el párrafo más importante del email — si no resuena aquí, nada de lo que sigue importa.]</p>
 
-Here's what I found specifically:
-[3-4 problemas del reporte en viñetas, en lenguaje humano. Prioriza los que refuerzan el argumento del Bottom line. Ejemplo: "Your homepage takes 5 seconds to load on mobile — above the threshold where Google starts penalizing your Ad Quality Score" en lugar de "LCP de 4.2s"]
+<p>Here's what I found specifically:</p>
+<ul>
+[3-4 problemas del reporte como <li> en lenguaje humano. Prioriza los que refuerzan el argumento del Bottom line. Ejemplo: <li>Your homepage takes 5 seconds to load on mobile — above the threshold where Google starts penalizing your Ad Quality Score</li>]
+</ul>
 
-[Si tiene reseñas o historial notable: "None of this reflects on your reputation — [X stars] and [detalle] speaks for itself."] The issue is purely technical, and it's fixable.
+[Si tiene reseñas o historial notable: <p>None of this reflects on your reputation — [X stars] and [detalle] speaks for itself. The issue is purely technical, and it's fixable.</p>]
 
----
-I put together a full breakdown here: ${reportUrl}
----
+<hr>
+<p>I put together a full breakdown here: <a href="${reportUrl}">Ver análisis completo &rarr;</a></p>
+<hr>
 
-Worth a few minutes? Book a call here...
-https://calendly.com/tallerdedigitalizacion-info/free-15-min-website-speed-call
+<p>Worth 30 minutes? <a href="https://cal.com/taller-de-digitalizacion/30min">Book a free call here</a></p>
 
-Free 15-min call to find out exactly what's slowing your site down and what it's costing you in ad spend.
-No pitch, no commitment. If I don't see a clear problem I can fix, I'll tell you straight.
+<p>Free 30-min call to find out exactly what's slowing your site down and what it's costing you in ad spend.<br>
+No pitch, no commitment. If I don't see a clear problem I can fix, I'll tell you straight.</p>
 
---
-Pablo Leone
-Web Infrastructure & WordPress Care
-info@tallerdedigitalizacion.com
+<p>--<br>
+Pablo Leone<br>
+Web Infrastructure &amp; WordPress Care<br>
+info@tallerdedigitalizacion.com</p>
 
 REGLAS:
 - El subject y el primer párrafo tienen que derivar directamente del Bottom line — no de los scores ni de los issues técnicos
 - Los problemas en viñetas en lenguaje humano, nunca términos técnicos crudos
 - No inventes datos que no estén en el reporte
 - Sin introducción ni explicación. Solo el email listo para copiar y enviar
+- El cuerpo debe ser HTML válido que se pueda pegar directamente en Zoho Mail en modo HTML
 
 ---
 REPORTE HTML:

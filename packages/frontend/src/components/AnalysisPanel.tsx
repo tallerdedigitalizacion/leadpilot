@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../api/client';
 import type { LeadItem, PageSpeedScore } from '../types/lead';
 
@@ -54,51 +54,30 @@ function PageSpeedScores({ score }: { score: PageSpeedScore }) {
   );
 }
 
-// ── Manual PageSpeed form ──────────────────────────────────────────────────────
+// ── Manual PageSpeed raw text form ────────────────────────────────────────────
 
-const EMPTY_MANUAL = { performance: '', accessibility: '', seo: '', bestPractices: '', lcp: '', tbt: '', speedIndex: '' };
-
-function ManualForm({
+function RawTextForm({
   strategy,
   leadId,
-  existing,
+  existingRaw,
   onSaved,
 }: {
   strategy: 'mobile' | 'desktop';
   leadId: string;
-  existing?: PageSpeedScore;
+  existingRaw?: string;
   onSaved: (lead: LeadItem) => void;
 }) {
   const [open, setOpen]     = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState<string | null>(null);
-  const [vals, setVals] = useState(existing ? {
-    performance:   existing.performance.toString(),
-    accessibility: existing.accessibility.toString(),
-    seo:           existing.seo.toString(),
-    bestPractices: existing.bestPractices.toString(),
-    lcp:           existing.lcp?.toString()        ?? '',
-    tbt:           existing.tbt?.toString()        ?? '',
-    speedIndex:    existing.speedIndex?.toString() ?? '',
-  } : { ...EMPTY_MANUAL });
-
-  const num = (v: string) => v === '' ? undefined : Number(v);
+  const [text, setText]     = useState(existingRaw ?? '');
 
   const handleSave = async () => {
-    if (!vals.performance) { setError('Performance es obligatorio'); return; }
+    if (!text.trim()) { setError('El texto no puede estar vacío'); return; }
     setSaving(true);
     setError(null);
     try {
-      const updated = await api.updatePagespeed(leadId, {
-        strategy,
-        performance:   Number(vals.performance),
-        accessibility: num(vals.accessibility),
-        seo:           num(vals.seo),
-        bestPractices: num(vals.bestPractices),
-        lcp:           num(vals.lcp),
-        tbt:           num(vals.tbt),
-        speedIndex:    num(vals.speedIndex),
-      });
+      const updated = await api.updatePagespeed(leadId, { strategy, rawText: text });
       onSaved(updated);
       setOpen(false);
     } catch (e) {
@@ -108,43 +87,28 @@ function ManualForm({
     }
   };
 
-  const f = (field: keyof typeof vals, label: string, placeholder: string) => (
-    <div>
-      <label className="text-xs text-gray-500 block mb-0.5">{label}</label>
-      <input
-        type="number"
-        value={vals[field]}
-        onChange={(e) => setVals(v => ({ ...v, [field]: e.target.value }))}
-        placeholder={placeholder}
-        className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand"
-      />
-    </div>
-  );
-
   return (
     <div className="mt-3">
       <button
         onClick={() => setOpen(o => !o)}
         className="text-xs text-gray-400 hover:text-gray-600 underline-offset-2 hover:underline"
       >
-        {open ? 'Cerrar entrada manual' : 'Introducir manualmente'}
+        {open ? 'Cerrar entrada manual' : existingRaw ? 'Editar datos manuales' : 'Introducir manualmente'}
       </button>
 
       {open && (
         <div className="mt-3 border rounded-lg p-3 bg-gray-50 space-y-3">
           <p className="text-xs text-gray-500">
-            Abre <a href={`https://pagespeed.web.dev/`} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">pagespeed.web.dev</a> y copia los valores aquí.
+            Abre <a href="https://pagespeed.web.dev/" target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">pagespeed.web.dev</a>, selecciona el análisis {strategy === 'mobile' ? 'Mobile' : 'Desktop'} y copia todo el contenido de la página aquí.
           </p>
           {error && <p className="text-xs text-red-600">{error}</p>}
-          <div className="grid grid-cols-2 gap-2">
-            {f('performance',   'Performance (0–100) *', '42')}
-            {f('accessibility', 'Accessibility (0–100)',  '87')}
-            {f('seo',           'SEO (0–100)',             '78')}
-            {f('bestPractices', 'Best Practices (0–100)', '83')}
-            {f('lcp',           'LCP (segundos)',          '4.2')}
-            {f('tbt',           'TBT (ms)',                '350')}
-            {f('speedIndex',    'Speed Index (seg)',       '5.1')}
-          </div>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={10}
+            placeholder="Pega aquí el contenido completo de PageSpeed…"
+            className="w-full border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-brand"
+          />
           <button
             onClick={handleSave}
             disabled={saving}
@@ -172,25 +136,57 @@ export default function AnalysisPanel({
     if (lead.aiWebAnalysis) return 'claude';
     return 'mobile';
   });
-  const [retrying, setRetrying]   = useState(false);
-  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retrying, setRetrying]       = useState(false);
+  const [retryQueued, setRetryQueued] = useState(false);
+  const [retryMsg, setRetryMsg]       = useState<string | null>(null);
+  const [retryError, setRetryError]   = useState<string | null>(null);
+  const retryBaseRef = useRef<number | undefined>(undefined);
 
-  const hasMobile   = Boolean(lead.pagespeedMobile);
-  const hasDesktop  = Boolean(lead.pagespeedDesktop);
+  const hasMobile   = Boolean(lead.pagespeedMobile || lead.pagespeedMobileRaw);
+  const hasDesktop  = Boolean(lead.pagespeedDesktop || lead.pagespeedDesktopRaw);
   const hasAnalysis = Boolean(lead.aiWebAnalysis);
 
   const handleRetry = async () => {
     setRetrying(true);
     setRetryError(null);
+    setRetryMsg(null);
+    retryBaseRef.current = lead.analyzedAt;
     try {
       await api.retryAnalysis(lead.leadId);
-      // Análisis async — el usuario verá los datos actualizarse via polling normal del LeadDetail
+      setRetryQueued(true);
+      setRetryMsg('Análisis iniciado — se actualizará en ~30–60 segundos');
     } catch (e) {
       setRetryError(e instanceof Error ? e.message : 'Error');
     } finally {
       setRetrying(false);
     }
   };
+
+  // Poll after retry until analyzedAt changes
+  useEffect(() => {
+    if (!retryQueued) return;
+    const baseline = retryBaseRef.current;
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 24) {
+        clearInterval(interval);
+        setRetryQueued(false);
+        setRetryMsg('Tarda más de lo esperado — refresca la página');
+        return;
+      }
+      try {
+        const updated = await api.getLead(lead.leadId);
+        if (updated.analyzedAt !== baseline) {
+          clearInterval(interval);
+          setRetryQueued(false);
+          setRetryMsg(null);
+          onLeadUpdate?.(updated);
+        }
+      } catch { /* reintento silencioso */ }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [retryQueued, lead.leadId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tabs: { id: Tab; label: string; has: boolean }[] = [
     { id: 'mobile',  label: 'PageSpeed Mobile',   has: hasMobile },
@@ -223,27 +219,42 @@ export default function AnalysisPanel({
           {retryError && <span className="text-xs text-red-500">{retryError}</span>}
           <button
             onClick={handleRetry}
-            disabled={retrying}
-            className="px-2.5 py-1 text-xs text-gray-500 border rounded hover:bg-gray-50 disabled:opacity-50"
+            disabled={retrying || retryQueued}
+            className="px-2.5 py-1 text-xs text-gray-500 border rounded hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5"
             title="Reintentar análisis completo (PageSpeed + Claude)"
           >
-            {retrying ? 'Reintentando…' : '↻ Reintentar análisis'}
+            {(retrying || retryQueued) && (
+              <span className="inline-block w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+            )}
+            {retrying ? 'Iniciando…' : retryQueued ? 'Analizando…' : '↻ Reintentar análisis'}
           </button>
         </div>
       </div>
 
+      {/* Retry in-progress message */}
+      {retryMsg && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 text-sm text-blue-700">
+          {retryMsg}
+        </div>
+      )}
+
       {/* Tab content */}
       {activeTab === 'mobile' && (
         <div>
-          {hasMobile ? (
-            <PageSpeedScores score={lead.pagespeedMobile!} />
-          ) : (
+          {lead.pagespeedMobile ? (
+            <PageSpeedScores score={lead.pagespeedMobile} />
+          ) : !lead.pagespeedMobileRaw ? (
             <p className="text-sm text-gray-400 italic">Sin datos de PageSpeed Mobile.</p>
+          ) : null}
+          {lead.pagespeedMobileRaw && (
+            <pre className="mt-3 whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 rounded-lg p-4 font-sans leading-relaxed">
+              {lead.pagespeedMobileRaw}
+            </pre>
           )}
-          <ManualForm
+          <RawTextForm
             strategy="mobile"
             leadId={lead.leadId}
-            existing={lead.pagespeedMobile}
+            existingRaw={lead.pagespeedMobileRaw}
             onSaved={onLeadUpdate ?? (() => {})}
           />
         </div>
@@ -251,15 +262,20 @@ export default function AnalysisPanel({
 
       {activeTab === 'desktop' && (
         <div>
-          {hasDesktop ? (
-            <PageSpeedScores score={lead.pagespeedDesktop!} />
-          ) : (
+          {lead.pagespeedDesktop ? (
+            <PageSpeedScores score={lead.pagespeedDesktop} />
+          ) : !lead.pagespeedDesktopRaw ? (
             <p className="text-sm text-gray-400 italic">Sin datos de PageSpeed Desktop.</p>
+          ) : null}
+          {lead.pagespeedDesktopRaw && (
+            <pre className="mt-3 whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 rounded-lg p-4 font-sans leading-relaxed">
+              {lead.pagespeedDesktopRaw}
+            </pre>
           )}
-          <ManualForm
+          <RawTextForm
             strategy="desktop"
             leadId={lead.leadId}
-            existing={lead.pagespeedDesktop}
+            existingRaw={lead.pagespeedDesktopRaw}
             onSaved={onLeadUpdate ?? (() => {})}
           />
         </div>
