@@ -52,6 +52,26 @@ export const api = {
     return request(`/leads/${leadId}/send`, { method: 'POST' });
   },
 
+  retryAnalysis(leadId: string): Promise<{ message: string; leadId: string }> {
+    return request(`/leads/${leadId}/analyze`, { method: 'POST' });
+  },
+
+  updatePagespeed(leadId: string, data: {
+    strategy: 'mobile' | 'desktop';
+    performance: number;
+    accessibility?: number;
+    seo?: number;
+    bestPractices?: number;
+    lcp?: number;
+    tbt?: number;
+    speedIndex?: number;
+  }): Promise<LeadItem> {
+    return request(`/leads/${leadId}/pagespeed`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   deleteLead(leadId: string): Promise<{ deleted: boolean; leadId: string }> {
     return request(`/leads/${leadId}`, { method: 'DELETE' });
   },

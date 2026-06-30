@@ -169,7 +169,9 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
             />
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <CopyButton text={`${emailSubject}\n\n${emailBody}`} label="Copiar email" />
+            <CopyButton text={emailSubject} label="Copiar asunto" />
+            <CopyButton text={emailBody}    label="Copiar cuerpo" />
+            <CopyButton text={`${emailSubject}\n\n${emailBody}`} label="Copiar todo" />
             {canSend && (
               <button
                 onClick={handleSendEmail}

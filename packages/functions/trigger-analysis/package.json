@@ -1,0 +1,14 @@
+{
+  "name": "@leadpilot/fn-trigger-analysis",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "@aws-sdk/client-lambda": "^3.600.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.140",
+    "typescript": "^5.4.0"
+  }
+}

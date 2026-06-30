@@ -124,6 +124,7 @@ export class Api extends Construct {
       environment: {
         ...commonEnv,
         ANTHROPIC_API_KEY_PARAM: '/leadpilot/anthropic-api-key',
+        FRONTEND_URL: props.frontendUrl ? `https://${props.frontendUrl}` : '',
       },
       bundling: {
         externalModules: ['@aws-sdk/*'],
@@ -168,6 +169,30 @@ export class Api extends Construct {
       })
     );
 
+    // ── trigger-analysis (async wrapper para reintentar análisis) ─────────────
+    const triggerAnalysisFn = new nodejs.NodejsFunction(this, 'TriggerAnalysis', {
+      ...commonProps,
+      functionName: 'leadpilot-trigger-analysis',
+      entry: fnEntry('trigger-analysis'),
+      handler: 'handler',
+      environment: {
+        ...commonEnv,
+        RUN_ANALYSIS_FUNCTION_NAME: analysisFn.functionName,
+      },
+    });
+    table.grantReadData(triggerAnalysisFn);
+    analysisFn.grantInvoke(triggerAnalysisFn);
+
+    // ── update-pagespeed (entrada manual de datos) ────────────────────────────
+    const updatePagespeedFn = new nodejs.NodejsFunction(this, 'UpdatePagespeed', {
+      ...commonProps,
+      functionName: 'leadpilot-update-pagespeed',
+      entry: fnEntry('update-pagespeed'),
+      handler: 'handler',
+      environment: commonEnv,
+    });
+    table.grantReadWriteData(updatePagespeedFn);
+
     // ── delete-lead ───────────────────────────────────────────────────────────
     const deleteFn = new nodejs.NodejsFunction(this, 'DeleteLead', {
       ...commonProps,
@@ -206,7 +231,8 @@ export class Api extends Construct {
     this.httpApi.addRoutes({ path: '/leads', methods: [apigwv2.HttpMethod.GET], integration: r(listFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}', methods: [apigwv2.HttpMethod.GET], integration: r(getFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}/status', methods: [apigwv2.HttpMethod.PATCH], integration: r(updateStatusFn) });
-    this.httpApi.addRoutes({ path: '/leads/{leadId}/analyze', methods: [apigwv2.HttpMethod.POST], integration: r(analysisFn) });
+    this.httpApi.addRoutes({ path: '/leads/{leadId}/analyze', methods: [apigwv2.HttpMethod.POST], integration: r(triggerAnalysisFn) });
+    this.httpApi.addRoutes({ path: '/leads/{leadId}/pagespeed', methods: [apigwv2.HttpMethod.PATCH], integration: r(updatePagespeedFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}/report', methods: [apigwv2.HttpMethod.POST], integration: r(triggerReportFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}/send', methods: [apigwv2.HttpMethod.POST], integration: r(sendEmailFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}', methods: [apigwv2.HttpMethod.DELETE], integration: r(deleteFn) });

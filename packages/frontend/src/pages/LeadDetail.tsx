@@ -278,7 +278,7 @@ export default function LeadDetail() {
       {(lead.status !== 'REVIEWING') && (
         <div className="bg-white border rounded-lg p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-4">Análisis técnico</h2>
-          <AnalysisPanel lead={lead} />
+          <AnalysisPanel lead={lead} onLeadUpdate={setLead} />
         </div>
       )}
 

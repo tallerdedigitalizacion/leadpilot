@@ -31,12 +31,20 @@ function shortId(leadId: string): string {
 
 function generateCalendarLink(lead: LeadItem): string {
   const followUpDate = new Date((lead.sentAt ?? Date.now()) + 7 * 24 * 60 * 60 * 1000);
-  const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  // All-day event: YYYYMMDD format, end = next day
+  const fmtDay = (d: Date) => d.toISOString().split('T')[0].replace(/-/g, '');
+  const endDate = new Date(followUpDate.getTime() + 24 * 60 * 60 * 1000);
+  const frontendUrl = process.env.FRONTEND_URL ?? '';
+  const details = [
+    frontendUrl ? `LeadPilot: ${frontendUrl}/leads/${lead.leadId}` : '',
+    lead.phone ? `Tel: ${lead.phone}` : '',
+    lead.url ? `Web: ${lead.url}` : '',
+  ].filter(Boolean).join('\n');
   const params = new URLSearchParams({
     action: 'TEMPLATE',
     text: `Seguimiento — ${lead.businessName}`,
-    dates: `${fmt(followUpDate)}/${fmt(new Date(followUpDate.getTime() + 30 * 60 * 1000))}`,
-    details: `Teléfono: ${lead.phone ?? 'no disponible'}\nLeadId: ${lead.leadId}`,
+    dates: `${fmtDay(followUpDate)}/${fmtDay(endDate)}`,
+    details,
   });
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
