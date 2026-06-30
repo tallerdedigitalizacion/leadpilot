@@ -35,20 +35,43 @@ interface PageSpeedRawResponse {
   };
 }
 
-async function fetchPageSpeed(url: string, strategy: 'mobile' | 'desktop'): Promise<PageSpeedScore> {
+function formatPageSpeedRaw(score: PageSpeedScore, strategy: 'mobile' | 'desktop', url: string): string {
+  const grade = (v: number, good: number, mid: number) =>
+    v >= good ? '✓ Good' : v >= mid ? '~ Needs Improvement' : '✗ Poor';
+  const date = new Date().toISOString().split('T')[0];
+  return [
+    `=== PageSpeed Insights — ${strategy === 'mobile' ? 'Mobile' : 'Desktop'} ===`,
+    `URL: https://${url}  |  Date: ${date}`,
+    '',
+    'SCORES',
+    `  Performance:    ${score.performance}/100  ${grade(score.performance, 90, 50)}`,
+    `  Accessibility:  ${score.accessibility}/100  ${grade(score.accessibility, 90, 50)}`,
+    `  SEO:            ${score.seo}/100  ${grade(score.seo, 90, 50)}`,
+    `  Best Practices: ${score.bestPractices}/100  ${grade(score.bestPractices, 90, 50)}`,
+    '',
+    'CORE WEB VITALS',
+    `  LCP:         ${score.lcp !== undefined ? `${score.lcp}s  ${grade(-score.lcp, -2.5, -4)}  (target <2.5s)` : 'N/A'}`,
+    `  TBT:         ${score.tbt !== undefined ? `${score.tbt}ms  ${grade(-score.tbt, -200, -600)}  (target <200ms)` : 'N/A'}`,
+    `  Speed Index: ${score.speedIndex !== undefined ? `${score.speedIndex}s  ${grade(-score.speedIndex, -3.4, -5.8)}  (target <3.4s)` : 'N/A'}`,
+  ].join('\n');
+}
+
+async function fetchPageSpeed(url: string, strategy: 'mobile' | 'desktop'): Promise<{ score: PageSpeedScore; rawText: string }> {
   const key = process.env.PAGESPEED_API_KEY;
-  const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://${url}&strategy=${strategy}${key ? `&key=${key}` : ''}`;
+  // Without explicit category params the API only returns Performance — request all four
+  const cats4 = 'category=performance&category=accessibility&category=seo&category=best-practices';
+  const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://${url}&strategy=${strategy}&${cats4}${key ? `&key=${key}` : ''}`;
   const res = await fetch(apiUrl);
-  if (!res.ok) throw new Error(`PageSpeed ${strategy} failed: ${res.status}`);
+  if (!res.ok) throw new Error(`PageSpeed ${strategy} failed: ${res.status} ${await res.text().catch(() => '')}`);
   const data = await res.json() as PageSpeedRawResponse;
-  const cats = data.lighthouseResult.categories;
+  const categories = data.lighthouseResult.categories;
   const audits = data.lighthouseResult.audits;
 
-  return {
-    performance: Math.round((cats['performance']?.score ?? 0) * 100),
-    accessibility: Math.round((cats['accessibility']?.score ?? 0) * 100),
-    seo: Math.round((cats['seo']?.score ?? 0) * 100),
-    bestPractices: Math.round((cats['best-practices']?.score ?? 0) * 100),
+  const score: PageSpeedScore = {
+    performance:   Math.round(((categories['performance']?.score   ?? 0)) * 100),
+    accessibility: Math.round(((categories['accessibility']?.score ?? 0)) * 100),
+    seo:           Math.round(((categories['seo']?.score           ?? 0)) * 100),
+    bestPractices: Math.round(((categories['best-practices']?.score ?? 0)) * 100),
     lcp: audits['largest-contentful-paint']?.numericValue
       ? Math.round((audits['largest-contentful-paint'].numericValue / 1000) * 10) / 10
       : undefined,
@@ -60,6 +83,8 @@ async function fetchPageSpeed(url: string, strategy: 'mobile' | 'desktop'): Prom
       : undefined,
     fetchedAt: Date.now(),
   };
+
+  return { score, rawText: formatPageSpeedRaw(score, strategy, url) };
 }
 
 // ── Web crawl + analysis ──────────────────────────────────────────────────────
@@ -206,16 +231,20 @@ export const handler = async (event: { leadId: string }): Promise<void> => {
   ];
 
   if (mobileResult.status === 'fulfilled') {
-    setParts.push('pagespeedMobile = :pagespeedMobile');
-    values[':pagespeedMobile'] = mobileResult.value;
-    console.log('PageSpeed mobile OK, performance:', mobileResult.value.performance);
+    const { score, rawText } = mobileResult.value;
+    setParts.push('pagespeedMobile = :pagespeedMobile', 'pagespeedMobileRaw = :pagespeedMobileRaw');
+    values[':pagespeedMobile'] = score;
+    values[':pagespeedMobileRaw'] = rawText;
+    console.log('PageSpeed mobile OK:', score.performance, score.accessibility, score.seo, score.bestPractices);
   } else {
     console.warn('PageSpeed mobile FAILED:', mobileResult.reason);
   }
   if (desktopResult.status === 'fulfilled') {
-    setParts.push('pagespeedDesktop = :pagespeedDesktop');
-    values[':pagespeedDesktop'] = desktopResult.value;
-    console.log('PageSpeed desktop OK, performance:', desktopResult.value.performance);
+    const { score, rawText } = desktopResult.value;
+    setParts.push('pagespeedDesktop = :pagespeedDesktop', 'pagespeedDesktopRaw = :pagespeedDesktopRaw');
+    values[':pagespeedDesktop'] = score;
+    values[':pagespeedDesktopRaw'] = rawText;
+    console.log('PageSpeed desktop OK:', score.performance, score.accessibility, score.seo, score.bestPractices);
   } else {
     console.warn('PageSpeed desktop FAILED:', desktopResult.reason);
   }
