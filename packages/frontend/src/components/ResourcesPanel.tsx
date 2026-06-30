@@ -33,6 +33,8 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   const [linkedinPost, setLinkedinPost] = useState(lead.linkedinPost ?? '');
   const [sending, setSending]           = useState(false);
   const [sent, setSent]                 = useState(false);
+  const [previewing, setPreviewing]     = useState(false);
+  const [previewSent, setPreviewSent]   = useState(false);
   const [regenLoading, setRegenLoading] = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -91,13 +93,27 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
     setSending(true);
     setError(null);
     try {
-      const updated = await api.sendEmail(lead.leadId, emailSubject, emailBody);
-      onLeadUpdate(updated);
+      const res = await api.sendEmail(lead.leadId, emailSubject, emailBody);
+      if ('leadId' in res) onLeadUpdate(res as LeadItem);
       setSent(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error enviando email');
     } finally {
       setSending(false);
+    }
+  };
+
+  const handlePreviewEmail = async () => {
+    setPreviewing(true);
+    setError(null);
+    try {
+      await api.sendEmail(lead.leadId, emailSubject, emailBody, true);
+      setPreviewSent(true);
+      setTimeout(() => setPreviewSent(false), 4000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error enviando prueba');
+    } finally {
+      setPreviewing(false);
     }
   };
 
@@ -215,17 +231,27 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
             <CopyButton text={`${emailSubject}\n\n${emailBody}`} label="Copiar email" />
             <CopyButton text={emailSubject} label="Copiar asunto" />
             <CopyButton text={emailBody}    label="Copiar cuerpo" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap pt-1 border-t">
+            {/* Preview: sends to info@tallerdedigitalizacion.com, subject prefixed [PREVIEW] */}
+            <button
+              onClick={handlePreviewEmail}
+              disabled={previewing || previewSent}
+              className="px-3 py-1.5 text-sm font-medium rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {previewing ? 'Enviando…' : previewSent ? '✓ Prueba enviada a ti' : 'Enviarme prueba'}
+            </button>
             {lead.email && lead.status === 'ANALYZED' && (
               <button
                 onClick={handleSendEmail}
                 disabled={sending || sent}
-                className="px-3 py-1.5 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50 ml-auto"
+                className="px-3 py-1.5 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50"
               >
                 {sending ? 'Enviando…' : sent ? '✓ Enviado' : `Enviar a ${lead.email}`}
               </button>
             )}
             {!lead.email && (
-              <span className="text-xs text-gray-400 ml-auto">Sin email — envía desde Zoho</span>
+              <span className="text-xs text-gray-400">Sin email — envía desde Zoho</span>
             )}
           </div>
         </section>
@@ -251,9 +277,17 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
             rows={10}
             className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
           />
-          <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3 flex-wrap">
             <CopyButton text={linkedinPost} label="Copiar post" />
-            <span className="text-xs text-gray-400">{linkedinPost.length} / 1200 chars</span>
+            <a
+              href="https://www.linkedin.com/company/111909220/admin/page-posts/published/?share=true"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700"
+            >
+              Publicar en LinkedIn →
+            </a>
+            <span className="text-xs text-gray-400 ml-auto">{linkedinPost.length} / 1200 chars</span>
           </div>
         </section>
       )}

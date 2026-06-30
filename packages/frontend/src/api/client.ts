@@ -48,10 +48,10 @@ export const api = {
     return request(`/leads/${leadId}/report`, { method: 'POST' });
   },
 
-  sendEmail(leadId: string, emailSubject: string, emailBody: string): Promise<LeadItem> {
+  sendEmail(leadId: string, emailSubject: string, emailBody: string, toSelf = false): Promise<LeadItem | { preview: true }> {
     return request(`/leads/${leadId}/send`, {
       method: 'POST',
-      body: JSON.stringify({ emailSubject, emailBody }),
+      body: JSON.stringify({ emailSubject, emailBody, toSelf }),
     });
   },
 

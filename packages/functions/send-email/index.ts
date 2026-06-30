@@ -25,28 +25,41 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   if (!result.Item) return respond(404, { error: 'Lead not found' });
   const lead = result.Item as LeadItem;
 
-  if (lead.status !== 'ANALYZED') {
+  // Accept overrides from request body (user may have edited the subject/body in the UI)
+  let reqBody: { emailSubject?: string; emailBody?: string; toSelf?: boolean } = {};
+  try { reqBody = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+
+  const toSelf = reqBody.toSelf === true;
+
+  if (!toSelf && lead.status !== 'ANALYZED') {
     return respond(400, { error: `Lead must be ANALYZED to send email, current: ${lead.status}` });
   }
-  if (!lead.email) return respond(400, { error: 'Lead has no email address' });
+  if (!toSelf && !lead.email) return respond(400, { error: 'Lead has no email address' });
   if (!lead.reportHtmlS3Key) return respond(400, { error: 'Report not generated yet — click "Generar reporte" first' });
   if (!lead.emailSubject || !lead.emailBody) return respond(400, { error: 'Email content not generated yet' });
-
-  // Accept overrides from request body (user may have edited the subject/body in the UI)
-  let reqBody: { emailSubject?: string; emailBody?: string } = {};
-  try { reqBody = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
 
   const subject = reqBody.emailSubject?.trim() || lead.emailSubject;
   const htmlBody = reqBody.emailBody?.trim() || lead.emailBody;
 
+  // toSelf = preview send — only to FROM_EMAIL, no status change
+  const toAddress = toSelf ? FROM_EMAIL : lead.email!;
+
   await ses.send(new SendEmailCommand({
     Source: FROM_EMAIL,
-    Destination: { ToAddresses: [lead.email] },
+    Destination: {
+      ToAddresses: [toAddress],
+      // On real sends always BCC yourself so you have a copy of every email sent
+      BccAddresses: toSelf ? [] : [FROM_EMAIL],
+    },
     Message: {
-      Subject: { Data: subject, Charset: 'UTF-8' },
+      Subject: { Data: toSelf ? `[PREVIEW] ${subject}` : subject, Charset: 'UTF-8' },
       Body:    { Html: { Data: htmlBody, Charset: 'UTF-8' } },
     },
   }));
+
+  if (toSelf) {
+    return respond(200, { preview: true });
+  }
 
   const now = Date.now();
   const timelineEvent: TimelineEvent = { at: now, event: 'EMAIL_SENT', by: 'user' };
