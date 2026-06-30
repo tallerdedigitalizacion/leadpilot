@@ -31,6 +31,8 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   const [emailSubject, setEmailSubject] = useState(lead.emailSubject ?? '');
   const [emailBody, setEmailBody]       = useState(lead.emailBody ?? '');
   const [linkedinPost, setLinkedinPost] = useState(lead.linkedinPost ?? '');
+  const [sending, setSending]           = useState(false);
+  const [sent, setSent]                 = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -74,6 +76,20 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   }, [isGenerating, hasReport, lead.leadId, onLeadUpdate]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  const handleSendEmail = async () => {
+    setSending(true);
+    setError(null);
+    try {
+      const updated = await api.sendEmail(lead.leadId, emailSubject, emailBody);
+      onLeadUpdate(updated);
+      setSent(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error enviando email');
+    } finally {
+      setSending(false);
+    }
+  };
 
   const handleGenerateReport = async () => {
     setError(null);
@@ -172,6 +188,18 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
           <div className="flex items-center gap-2 flex-wrap">
             <CopyButton text={emailSubject} label="Copiar asunto" />
             <CopyButton text={emailBody}    label="Copiar cuerpo" />
+            {lead.email && lead.status === 'ANALYZED' && (
+              <button
+                onClick={handleSendEmail}
+                disabled={sending || sent}
+                className="px-3 py-1.5 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50 ml-auto"
+              >
+                {sending ? 'Enviando…' : sent ? '✓ Enviado' : `Enviar a ${lead.email}`}
+              </button>
+            )}
+            {!lead.email && (
+              <span className="text-xs text-gray-400">Sin email — envía manualmente desde Zoho</span>
+            )}
           </div>
         </section>
       )}

@@ -35,7 +35,7 @@ export class Api extends Construct {
     const commonEnv = {
       LEADS_TABLE_NAME: table.tableName,
       REPORTS_BUCKET_NAME: reportsBucket.bucketName,
-      SES_FROM_EMAIL: 'pablo@tallerdigitalizacion.com',
+      SES_FROM_EMAIL: 'info@tallerdedigitalizacion.com',
       INGEST_API_KEY: props.ingestApiKey,
     };
 
@@ -164,7 +164,7 @@ export class Api extends Construct {
     reportsBucket.grantRead(sendEmailFn);
     sendEmailFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ['ses:SendRawEmail'],
+        actions: ['ses:SendEmail'],
         resources: ['*'],
       })
     );

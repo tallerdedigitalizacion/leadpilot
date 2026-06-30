@@ -32,12 +32,19 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   if (!lead.reportHtmlS3Key) return respond(400, { error: 'Report not generated yet — click "Generar reporte" first' });
   if (!lead.emailSubject || !lead.emailBody) return respond(400, { error: 'Email content not generated yet' });
 
+  // Accept overrides from request body (user may have edited the subject/body in the UI)
+  let reqBody: { emailSubject?: string; emailBody?: string } = {};
+  try { reqBody = JSON.parse(event.body ?? '{}'); } catch { /* ignore */ }
+
+  const subject = reqBody.emailSubject?.trim() || lead.emailSubject;
+  const htmlBody = reqBody.emailBody?.trim() || lead.emailBody;
+
   await ses.send(new SendEmailCommand({
     Source: FROM_EMAIL,
     Destination: { ToAddresses: [lead.email] },
     Message: {
-      Subject: { Data: lead.emailSubject, Charset: 'UTF-8' },
-      Body:    { Html: { Data: lead.emailBody, Charset: 'UTF-8' } },
+      Subject: { Data: subject, Charset: 'UTF-8' },
+      Body:    { Html: { Data: htmlBody, Charset: 'UTF-8' } },
     },
   }));
 

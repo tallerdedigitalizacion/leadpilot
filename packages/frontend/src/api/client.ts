@@ -48,8 +48,11 @@ export const api = {
     return request(`/leads/${leadId}/report`, { method: 'POST' });
   },
 
-  sendEmail(leadId: string): Promise<LeadItem> {
-    return request(`/leads/${leadId}/send`, { method: 'POST' });
+  sendEmail(leadId: string, emailSubject: string, emailBody: string): Promise<LeadItem> {
+    return request(`/leads/${leadId}/send`, {
+      method: 'POST',
+      body: JSON.stringify({ emailSubject, emailBody }),
+    });
   },
 
   retryAnalysis(leadId: string): Promise<{ message: string; leadId: string }> {
