@@ -15,7 +15,6 @@ interface ApiProps {
   reportsBucket: s3.Bucket;
   ingestApiKey: string;
   frontendUrl?: string;
-  pagespeedApiKey?: string;
 }
 
 export class Api extends Construct {
@@ -31,6 +30,11 @@ export class Api extends Construct {
       this,
       'AnthropicKeyParam',
       { parameterName: '/leadpilot/anthropic-api-key' }
+    );
+
+    // PageSpeed API key — plain string (not secret), resolved at deploy time
+    const pagespeedApiKey = ssm.StringParameter.valueForStringParameter(
+      this, '/leadpilot/pagespeed-api-key'
     );
 
     const commonEnv = {
@@ -95,7 +99,7 @@ export class Api extends Construct {
       environment: {
         ...commonEnv,
         ANTHROPIC_API_KEY_PARAM: '/leadpilot/anthropic-api-key',
-        PAGESPEED_API_KEY: props.pagespeedApiKey ?? '',
+        PAGESPEED_API_KEY: pagespeedApiKey,
       },
     });
     table.grantReadWriteData(analysisFn);
