@@ -15,6 +15,7 @@ interface ApiProps {
   reportsBucket: s3.Bucket;
   ingestApiKey: string;
   frontendUrl?: string;
+  pagespeedApiKey?: string;
 }
 
 export class Api extends Construct {
@@ -94,6 +95,7 @@ export class Api extends Construct {
       environment: {
         ...commonEnv,
         ANTHROPIC_API_KEY_PARAM: '/leadpilot/anthropic-api-key',
+        PAGESPEED_API_KEY: props.pagespeedApiKey ?? '',
       },
     });
     table.grantReadWriteData(analysisFn);
@@ -203,6 +205,23 @@ export class Api extends Construct {
     });
     table.grantReadWriteData(deleteFn);
 
+    // ── regenerate-email (regenera email + linkedin desde el HTML del reporte) ─
+    const regenerateEmailFn = new nodejs.NodejsFunction(this, 'RegenerateEmail', {
+      ...commonProps,
+      functionName: 'leadpilot-regenerate-email',
+      entry: fnEntry('regenerate-email'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(60),
+      memorySize: 256,
+      environment: {
+        ...commonEnv,
+        ANTHROPIC_API_KEY_PARAM: '/leadpilot/anthropic-api-key',
+      },
+    });
+    table.grantReadWriteData(regenerateEmailFn);
+    reportsBucket.grantRead(regenerateEmailFn);
+    anthropicKeyParam.grantRead(regenerateEmailFn);
+
     // ── no-response-checker ───────────────────────────────────────────────────
     this.noResponseFn = new nodejs.NodejsFunction(this, 'NoResponseChecker', {
       ...commonProps,
@@ -236,5 +255,6 @@ export class Api extends Construct {
     this.httpApi.addRoutes({ path: '/leads/{leadId}/report', methods: [apigwv2.HttpMethod.POST], integration: r(triggerReportFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}/send', methods: [apigwv2.HttpMethod.POST], integration: r(sendEmailFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}', methods: [apigwv2.HttpMethod.DELETE], integration: r(deleteFn) });
+    this.httpApi.addRoutes({ path: '/leads/{leadId}/regen-email', methods: [apigwv2.HttpMethod.POST], integration: r(regenerateEmailFn) });
   }
 }

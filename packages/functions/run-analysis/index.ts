@@ -36,7 +36,8 @@ interface PageSpeedRawResponse {
 }
 
 async function fetchPageSpeed(url: string, strategy: 'mobile' | 'desktop'): Promise<PageSpeedScore> {
-  const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://${url}&strategy=${strategy}`;
+  const key = process.env.PAGESPEED_API_KEY;
+  const apiUrl = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://${url}&strategy=${strategy}${key ? `&key=${key}` : ''}`;
   const res = await fetch(apiUrl);
   if (!res.ok) throw new Error(`PageSpeed ${strategy} failed: ${res.status}`);
   const data = await res.json() as PageSpeedRawResponse;

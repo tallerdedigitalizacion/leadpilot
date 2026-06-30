@@ -73,6 +73,10 @@ export const api = {
     return request(`/leads/${leadId}`, { method: 'DELETE' });
   },
 
+  regenEmail(leadId: string): Promise<LeadItem> {
+    return request(`/leads/${leadId}/regen-email`, { method: 'POST' });
+  },
+
   addLead(lead: {
     businessName: string;
     url: string;
