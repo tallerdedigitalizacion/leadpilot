@@ -3,6 +3,7 @@ import type { LeadStatus } from '../types/lead';
 const CONFIG: Record<LeadStatus, { label: string; className: string }> = {
   REVIEWING:    { label: 'Revisando',     className: 'bg-yellow-100 text-yellow-800' },
   DISCARDED:    { label: 'Descartado',    className: 'bg-gray-100 text-gray-500' },
+  ARCHIVED:     { label: 'Archivado',     className: 'bg-slate-100 text-slate-500' },
   QUALIFIED:    { label: 'Calificado',    className: 'bg-blue-100 text-blue-800' },
   ANALYZED:     { label: 'Analizado',     className: 'bg-indigo-100 text-indigo-800' },
   SENT:         { label: 'Enviado',       className: 'bg-purple-100 text-purple-800' },

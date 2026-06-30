@@ -1,13 +1,14 @@
-import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+// Worker invoked asynchronously by trigger-report Lambda — not via API Gateway
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import Anthropic from '@anthropic-ai/sdk';
 import type { LeadItem, TimelineEvent } from '../shared/types';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-const s3 = new S3Client({});
+const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
 const ssm = new SSMClient({});
 const TABLE = process.env.LEADS_TABLE_NAME!;
 const BUCKET = process.env.REPORTS_BUCKET_NAME!;
@@ -24,12 +25,10 @@ async function getAnthropicClient(): Promise<Anthropic> {
   return anthropicClient;
 }
 
-// ── Short display ID from leadId ──────────────────────────────────────────────
 function shortId(leadId: string): string {
   return leadId.replace(/-/g, '').slice(0, 6).toUpperCase();
 }
 
-// ── Calendar link ─────────────────────────────────────────────────────────────
 function generateCalendarLink(lead: LeadItem): string {
   const followUpDate = new Date((lead.sentAt ?? Date.now()) + 7 * 24 * 60 * 60 * 1000);
   const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
@@ -202,7 +201,6 @@ ${reportHtml.slice(0, 30000)}`;
   const block = message.content[0];
   const text = block.type === 'text' ? block.text : '';
 
-  // Extraer subject y body del texto generado
   const subjectMatch = text.match(/^Subject:\s*(.+)/m);
   const subject = subjectMatch ? subjectMatch[1].trim() : '';
   const body = text.replace(/^Subject:.*\n?/, '').trim();
@@ -212,10 +210,7 @@ ${reportHtml.slice(0, 30000)}`;
 
 // ── 3. LINKEDIN POST ──────────────────────────────────────────────────────────
 
-async function generateLinkedinPost(
-  client: Anthropic,
-  reportHtml: string
-): Promise<string> {
+async function generateLinkedinPost(client: Anthropic, reportHtml: string): Promise<string> {
   const prompt = `Se te va a proporcionar el reporte del prospecto como archivo HTML.
 Con esa información genera un post de LinkedIn con estas reglas:
 
@@ -273,121 +268,79 @@ ${reportHtml.slice(0, 30000)}`;
   return block.type === 'text' ? block.text : '';
 }
 
-// ── PDF via Puppeteer ─────────────────────────────────────────────────────────
+// ── Handler (direct invocation, not HTTP) ─────────────────────────────────────
 
-async function htmlToPdf(html: string): Promise<Buffer> {
-  const chromium = await import('@sparticuz/chromium');
-  const puppeteer = await import('puppeteer-core');
-
-  const browser = await puppeteer.default.launch({
-    args: chromium.default.args,
-    defaultViewport: chromium.default.defaultViewport,
-    executablePath: await chromium.default.executablePath(),
-    headless: true,
-  });
-
-  try {
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-    const pdf = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '15mm', right: '15mm', bottom: '15mm', left: '15mm' },
-    });
-    return Buffer.from(pdf);
-  } finally {
-    await browser.close();
-  }
-}
-
-// ── Handler ───────────────────────────────────────────────────────────────────
-
-function respond(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
-  return {
-    statusCode,
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  };
-}
-
-export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
-  const leadId = event.pathParameters?.leadId;
-  if (!leadId) return respond(400, { error: 'leadId is required' });
+export const handler = async (event: { leadId: string }): Promise<void> => {
+  const { leadId } = event;
 
   const result = await ddb.send(new GetCommand({ TableName: TABLE, Key: { leadId } }));
-  if (!result.Item) return respond(404, { error: 'Lead not found' });
+  if (!result.Item) throw new Error(`Lead ${leadId} not found`);
   const lead = result.Item as LeadItem;
 
-  if (!['ANALYZED', 'SENT', 'CALLED', 'RESPONDED', 'NO_RESPONSE'].includes(lead.status)) {
-    return respond(400, { error: `Lead must be ANALYZED or later. Current: ${lead.status}` });
-  }
-
   const client = await getAnthropicClient();
-
-  // S3 keys
   const htmlKey = `reports/${leadId}/report.html`;
-  const pdfKey = `reports/${leadId}/report.pdf`;
 
-  // URL pública del PDF (para el email). Usamos una URL firmada de CloudFront o el endpoint de S3.
-  // En MVP usamos la S3 key como referencia — se puede reemplazar por una URL firmada si hace falta.
-  const reportUrl = `[URL_REPORTE]`; // se sustituye manualmente o con S3 presigned URL
+  try {
+    // Generar HTML del reporte
+    const reportHtml = await generateReportHtml(client, lead);
 
-  // Generar HTML del reporte
-  const reportHtml = await generateReportHtml(client, lead);
-
-  // Generar email y LinkedIn en paralelo (ambos usan el HTML del reporte)
-  const [emailData, linkedinPost, pdfBuffer] = await Promise.all([
-    generateEmail(client, reportHtml, reportUrl),
-    generateLinkedinPost(client, reportHtml),
-    htmlToPdf(reportHtml),
-  ]);
-
-  // Subir a S3
-  await Promise.all([
-    s3.send(new PutObjectCommand({
+    // Subir HTML a S3
+    await s3.send(new PutObjectCommand({
       Bucket: BUCKET,
       Key: htmlKey,
       Body: reportHtml,
       ContentType: 'text/html',
-    })),
-    s3.send(new PutObjectCommand({
-      Bucket: BUCKET,
-      Key: pdfKey,
-      Body: pdfBuffer,
-      ContentType: 'application/pdf',
-    })),
-  ]);
+    }));
 
-  const now = Date.now();
-  const calendarLink = generateCalendarLink(lead);
-  const timelineEvent: TimelineEvent = { at: now, event: 'REPORT_GENERATED', by: 'system' };
+    // Generar presigned URL (7 días)
+    const reportUrl = await getSignedUrl(
+      s3,
+      new GetObjectCommand({ Bucket: BUCKET, Key: htmlKey }),
+      { expiresIn: 7 * 24 * 60 * 60 }
+    );
 
-  await ddb.send(new UpdateCommand({
-    TableName: TABLE,
-    Key: { leadId },
-    UpdateExpression: `SET
-      reportHtmlS3Key = :htmlKey,
-      reportPdfS3Key = :pdfKey,
-      emailSubject = :emailSubject,
-      emailBody = :emailBody,
-      linkedinPost = :linkedinPost,
-      calendarLink = :calendarLink,
-      timeline = list_append(timeline, :event)`,
-    ExpressionAttributeValues: {
-      ':htmlKey': htmlKey,
-      ':pdfKey': pdfKey,
-      ':emailSubject': emailData.subject,
-      ':emailBody': emailData.body,
-      ':linkedinPost': linkedinPost,
-      ':calendarLink': calendarLink,
-      ':event': [timelineEvent],
-    },
-  }));
+    // Generar email y LinkedIn en paralelo
+    const [emailData, linkedinPost] = await Promise.all([
+      generateEmail(client, reportHtml, reportUrl),
+      generateLinkedinPost(client, reportHtml),
+    ]);
 
-  return respond(200, {
-    reportHtmlS3Key: htmlKey,
-    reportPdfS3Key: pdfKey,
-    emailSubject: emailData.subject,
-    calendarLink,
-  });
+    const now = Date.now();
+    const calendarLink = generateCalendarLink(lead);
+    const timelineEvent: TimelineEvent = { at: now, event: 'REPORT_GENERATED', by: 'system' };
+
+    await ddb.send(new UpdateCommand({
+      TableName: TABLE,
+      Key: { leadId },
+      UpdateExpression: `SET
+        reportHtmlS3Key = :htmlKey,
+        reportUrl = :reportUrl,
+        emailSubject = :emailSubject,
+        emailBody = :emailBody,
+        linkedinPost = :linkedinPost,
+        calendarLink = :calendarLink,
+        isGeneratingReport = :false,
+        timeline = list_append(timeline, :event)`,
+      ExpressionAttributeValues: {
+        ':htmlKey': htmlKey,
+        ':reportUrl': reportUrl,
+        ':emailSubject': emailData.subject,
+        ':emailBody': emailData.body,
+        ':linkedinPost': linkedinPost,
+        ':calendarLink': calendarLink,
+        ':false': false,
+        ':event': [timelineEvent],
+      },
+    }));
+  } catch (err) {
+    console.error('generate-report failed:', err);
+    // Always clear the generating flag so UI doesn't stay stuck
+    await ddb.send(new UpdateCommand({
+      TableName: TABLE,
+      Key: { leadId },
+      UpdateExpression: 'SET isGeneratingReport = :false',
+      ExpressionAttributeValues: { ':false': false },
+    })).catch(() => {});
+    throw err;
+  }
 };

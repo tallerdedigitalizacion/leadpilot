@@ -207,14 +207,23 @@ export const handler = async (event: { leadId: string }): Promise<void> => {
   if (mobileResult.status === 'fulfilled') {
     setParts.push('pagespeedMobile = :pagespeedMobile');
     values[':pagespeedMobile'] = mobileResult.value;
+    console.log('PageSpeed mobile OK, performance:', mobileResult.value.performance);
+  } else {
+    console.warn('PageSpeed mobile FAILED:', mobileResult.reason);
   }
   if (desktopResult.status === 'fulfilled') {
     setParts.push('pagespeedDesktop = :pagespeedDesktop');
     values[':pagespeedDesktop'] = desktopResult.value;
+    console.log('PageSpeed desktop OK, performance:', desktopResult.value.performance);
+  } else {
+    console.warn('PageSpeed desktop FAILED:', desktopResult.reason);
   }
   if (analysisResult.status === 'fulfilled') {
     setParts.push('aiWebAnalysis = :aiWebAnalysis');
     values[':aiWebAnalysis'] = analysisResult.value;
+    console.log('Claude analysis OK');
+  } else {
+    console.warn('Claude analysis FAILED:', analysisResult.reason);
   }
 
   await ddb.send(new UpdateCommand({

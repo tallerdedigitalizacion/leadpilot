@@ -1,6 +1,7 @@
 export type LeadStatus =
   | 'REVIEWING'
   | 'DISCARDED'
+  | 'ARCHIVED'
   | 'QUALIFIED'
   | 'ANALYZED'
   | 'SENT'
@@ -13,6 +14,9 @@ export interface PageSpeedScore {
   accessibility: number;
   seo: number;
   bestPractices: number;
+  lcp?: number;
+  tbt?: number;
+  speedIndex?: number;
   fetchedAt: number;
 }
 
@@ -40,8 +44,10 @@ export interface LeadItem {
   pagespeedDesktop?: PageSpeedScore;
   aiWebAnalysis?: string;
   myNotes?: string;
+  isGeneratingReport?: boolean;
+  reportGenerationStartedAt?: number;
   reportHtmlS3Key?: string;
-  reportPdfS3Key?: string;
+  reportUrl?: string;
   emailSubject?: string;
   emailBody?: string;
   linkedinPost?: string;

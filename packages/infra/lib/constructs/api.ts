@@ -113,26 +113,43 @@ export class Api extends Construct {
     table.grantReadWriteData(updateStatusFn);
     analysisFn.grantInvoke(updateStatusFn);
 
-    // ── generate-report ───────────────────────────────────────────────────────
+    // ── generate-report (worker — invocado async) ─────────────────────────────
     const reportFn = new nodejs.NodejsFunction(this, 'GenerateReport', {
       ...commonProps,
       functionName: 'leadpilot-generate-report',
       entry: fnEntry('generate-report'),
       handler: 'handler',
-      timeout: cdk.Duration.seconds(120),
-      memorySize: 1536,
+      timeout: cdk.Duration.seconds(300),
+      memorySize: 512,
       environment: {
         ...commonEnv,
         ANTHROPIC_API_KEY_PARAM: '/leadpilot/anthropic-api-key',
       },
       bundling: {
-        externalModules: ['@aws-sdk/*', '@sparticuz/chromium'],
+        externalModules: ['@aws-sdk/*'],
+        // @aws-sdk/s3-request-presigner is pure JS — nodeModules installs it
+        // in the Lambda package separately from the esbuild bundle
+        nodeModules: ['@aws-sdk/s3-request-presigner'],
         minify: true,
       },
     });
     table.grantReadWriteData(reportFn);
     reportsBucket.grantReadWrite(reportFn);
     anthropicKeyParam.grantRead(reportFn);
+
+    // ── trigger-report (wrapper HTTP → invoca generate-report async) ──────────
+    const triggerReportFn = new nodejs.NodejsFunction(this, 'TriggerReport', {
+      ...commonProps,
+      functionName: 'leadpilot-trigger-report',
+      entry: fnEntry('trigger-report'),
+      handler: 'handler',
+      environment: {
+        ...commonEnv,
+        GENERATE_REPORT_FUNCTION_NAME: reportFn.functionName,
+      },
+    });
+    table.grantReadWriteData(triggerReportFn);
+    reportFn.grantInvoke(triggerReportFn);
 
     // ── send-email ────────────────────────────────────────────────────────────
     const sendEmailFn = new nodejs.NodejsFunction(this, 'SendEmail', {
@@ -151,6 +168,16 @@ export class Api extends Construct {
       })
     );
 
+    // ── delete-lead ───────────────────────────────────────────────────────────
+    const deleteFn = new nodejs.NodejsFunction(this, 'DeleteLead', {
+      ...commonProps,
+      functionName: 'leadpilot-delete-lead',
+      entry: fnEntry('delete-lead'),
+      handler: 'handler',
+      environment: commonEnv,
+    });
+    table.grantReadWriteData(deleteFn);
+
     // ── no-response-checker ───────────────────────────────────────────────────
     this.noResponseFn = new nodejs.NodejsFunction(this, 'NoResponseChecker', {
       ...commonProps,
@@ -165,10 +192,7 @@ export class Api extends Construct {
     this.httpApi = new apigwv2.HttpApi(this, 'HttpApi', {
       apiName: 'leadpilot-api',
       corsPreflight: {
-        allowOrigins: [
-          'http://localhost:5173',
-          ...(props.frontendUrl ? [`https://${props.frontendUrl}`] : []),
-        ],
+        allowOrigins: ['*'],
         allowMethods: [apigwv2.CorsHttpMethod.ANY],
         allowHeaders: ['content-type', 'x-api-key'],
         maxAge: cdk.Duration.days(1),
@@ -183,7 +207,8 @@ export class Api extends Construct {
     this.httpApi.addRoutes({ path: '/leads/{leadId}', methods: [apigwv2.HttpMethod.GET], integration: r(getFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}/status', methods: [apigwv2.HttpMethod.PATCH], integration: r(updateStatusFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}/analyze', methods: [apigwv2.HttpMethod.POST], integration: r(analysisFn) });
-    this.httpApi.addRoutes({ path: '/leads/{leadId}/report', methods: [apigwv2.HttpMethod.POST], integration: r(reportFn) });
+    this.httpApi.addRoutes({ path: '/leads/{leadId}/report', methods: [apigwv2.HttpMethod.POST], integration: r(triggerReportFn) });
     this.httpApi.addRoutes({ path: '/leads/{leadId}/send', methods: [apigwv2.HttpMethod.POST], integration: r(sendEmailFn) });
+    this.httpApi.addRoutes({ path: '/leads/{leadId}', methods: [apigwv2.HttpMethod.DELETE], integration: r(deleteFn) });
   }
 }

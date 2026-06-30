@@ -17,17 +17,24 @@ function respond(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
   };
 }
 
+// ARCHIVED es alcanzable desde cualquier estado activo
+const TERMINAL: LeadStatus[] = ['ARCHIVED', 'DISCARDED'];
+
 const VALID_TRANSITIONS: Partial<Record<LeadStatus, LeadStatus[]>> = {
-  REVIEWING: ['QUALIFIED', 'DISCARDED'],
-  ANALYZED: ['SENT'],
-  SENT: ['CALLED', 'RESPONDED'],
+  REVIEWING:   ['QUALIFIED', 'DISCARDED', 'ARCHIVED'],
+  QUALIFIED:   ['ARCHIVED'],
+  ANALYZED:    ['SENT', 'ARCHIVED'],
+  SENT:        ['CALLED', 'RESPONDED', 'ARCHIVED'],
+  CALLED:      ['RESPONDED', 'ARCHIVED'],
+  NO_RESPONSE: ['ARCHIVED'],
+  RESPONDED:   ['ARCHIVED'],
 };
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
   const leadId = event.pathParameters?.leadId;
   if (!leadId) return respond(400, { error: 'leadId is required' });
 
-  let body: { status: LeadStatus; note?: string };
+  let body: { status?: LeadStatus; note?: string; myNotes?: string };
   try {
     body = JSON.parse(event.body ?? '{}');
   } catch {
@@ -38,6 +45,28 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   if (!existing.Item) return respond(404, { error: 'Lead not found' });
 
   const current = existing.Item.status as LeadStatus;
+
+  // ── Caso 1: solo actualizar myNotes (sin cambio de estado) ────────────────
+  if (!body.status && body.myNotes !== undefined) {
+    const updated = await ddb.send(new UpdateCommand({
+      TableName: TABLE,
+      Key: { leadId },
+      UpdateExpression: 'SET myNotes = :myNotes',
+      ExpressionAttributeValues: { ':myNotes': body.myNotes },
+      ReturnValues: 'ALL_NEW',
+    }));
+    return respond(200, updated.Attributes);
+  }
+
+  // ── Caso 2: transición de estado ──────────────────────────────────────────
+  if (!body.status) {
+    return respond(400, { error: 'Either status or myNotes required' });
+  }
+
+  if (TERMINAL.includes(current)) {
+    return respond(400, { error: `Lead is already ${current}` });
+  }
+
   const allowed = VALID_TRANSITIONS[current];
   if (!allowed || !allowed.includes(body.status)) {
     return respond(400, { error: `Cannot transition from ${current} to ${body.status}` });
@@ -54,12 +83,13 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const extraFields: Record<string, unknown> = {};
   if (body.status === 'QUALIFIED') extraFields.qualifiedAt = now;
   if (body.status === 'SENT') extraFields.sentAt = now;
+  if (body.myNotes !== undefined) extraFields.myNotes = body.myNotes;
 
-  const updateExpr = [
+  const setParts = [
     '#status = :status',
     'timeline = list_append(timeline, :event)',
     ...Object.keys(extraFields).map((k) => `#${k} = :${k}`),
-  ].join(', ');
+  ];
 
   const attrNames: Record<string, string> = {
     '#status': 'status',
@@ -74,17 +104,16 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const updated = await ddb.send(new UpdateCommand({
     TableName: TABLE,
     Key: { leadId },
-    UpdateExpression: `SET ${updateExpr}`,
+    UpdateExpression: `SET ${setParts.join(', ')}`,
     ExpressionAttributeNames: attrNames,
     ExpressionAttributeValues: attrValues,
     ReturnValues: 'ALL_NEW',
   }));
 
-  // Al pasar a QUALIFIED, dispara análisis de forma asíncrona
   if (body.status === 'QUALIFIED') {
     await lambdaClient.send(new InvokeCommand({
       FunctionName: RUN_ANALYSIS_FN,
-      InvocationType: 'Event', // asíncrono — no espera respuesta
+      InvocationType: 'Event',
       Payload: JSON.stringify({ leadId }),
     }));
   }

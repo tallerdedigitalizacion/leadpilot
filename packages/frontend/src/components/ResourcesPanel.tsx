@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import CopyButton from './CopyButton';
 import { api } from '../api/client';
 import type { LeadItem } from '../types/lead';
@@ -10,26 +10,62 @@ interface Props {
 
 export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   const [emailSubject, setEmailSubject] = useState(lead.emailSubject ?? '');
-  const [emailBody, setEmailBody] = useState(lead.emailBody ?? '');
+  const [emailBody, setEmailBody]       = useState(lead.emailBody ?? '');
   const [linkedinPost, setLinkedinPost] = useState(lead.linkedinPost ?? '');
-  const [sending, setSending] = useState(false);
-  const [generatingReport, setGeneratingReport] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending]           = useState(false);
+  const [error, setError]               = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isGenerating = Boolean(lead.isGeneratingReport);
+  const hasReport    = Boolean(lead.reportHtmlS3Key);
+  const hasNotes     = Boolean(lead.myNotes?.trim());
+
+  useEffect(() => {
+    setEmailSubject(lead.emailSubject ?? '');
+    setEmailBody(lead.emailBody ?? '');
+    setLinkedinPost(lead.linkedinPost ?? '');
+  }, [lead.emailSubject, lead.emailBody, lead.linkedinPost]);
+
+  // Poll si se está generando el reporte (flag en DynamoDB — visible en todos los tabs)
+  useEffect(() => {
+    if (!isGenerating || hasReport) {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      return;
+    }
+
+    let attempts = 0;
+    pollRef.current = setInterval(async () => {
+      attempts++;
+      if (attempts > 40) { // 40 × 5s = 200s → timeout visual
+        clearInterval(pollRef.current!);
+        pollRef.current = null;
+        setError('La generación tardó más de lo esperado. Refresca en un momento.');
+        return;
+      }
+      try {
+        const updated = await api.getLead(lead.leadId);
+        if (updated.reportHtmlS3Key || !updated.isGeneratingReport) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          onLeadUpdate(updated);
+        }
+      } catch { /* reintento silencioso */ }
+    }, 5000);
+
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [isGenerating, hasReport, lead.leadId, onLeadUpdate]);
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const handleGenerateReport = async () => {
-    setGeneratingReport(true);
     setError(null);
     try {
-      await api.generateReport(lead.leadId);
+      await api.triggerReport(lead.leadId);
+      // El flag isGeneratingReport=true llega con el siguiente poll — refrescamos ya
       const updated = await api.getLead(lead.leadId);
       onLeadUpdate(updated);
-      setEmailSubject(updated.emailSubject ?? '');
-      setEmailBody(updated.emailBody ?? '');
-      setLinkedinPost(updated.linkedinPost ?? '');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error generando reporte');
-    } finally {
-      setGeneratingReport(false);
+      setError(e instanceof Error ? e.message : 'Error al iniciar la generación');
     }
   };
 
@@ -47,8 +83,7 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
     }
   };
 
-  const hasPdf = Boolean(lead.reportPdfS3Key);
-  const canSend = lead.status === 'ANALYZED' && hasPdf && Boolean(lead.email);
+  const canSend = lead.status === 'ANALYZED' && hasReport && Boolean(lead.email);
 
   return (
     <div className="space-y-5">
@@ -59,65 +94,95 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
       )}
 
       {/* Generar reporte */}
-      {!hasPdf && (
+      {!hasReport && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
-          <p className="text-sm text-indigo-700 mb-3">
-            El reporte aún no se ha generado. Genera el HTML + PDF, el email y el post de LinkedIn.
-          </p>
-          <button
-            onClick={handleGenerateReport}
-            disabled={generatingReport}
-            className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-wait"
-          >
-            {generatingReport ? 'Generando…' : 'Generar reporte'}
-          </button>
+          {isGenerating ? (
+            <div className="flex items-center gap-3">
+              <div className="animate-spin w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-indigo-700">Generando reporte…</p>
+                <p className="text-xs text-indigo-500 mt-0.5">
+                  Claude está analizando la web y generando el HTML. Tarda ~60–90 segundos.
+                </p>
+              </div>
+            </div>
+          ) : !hasNotes ? (
+            <div>
+              <p className="text-sm font-medium text-indigo-700 mb-1">Añade tus notas primero</p>
+              <p className="text-xs text-indigo-500">
+                El reporte incluye tus observaciones. Escribe al menos una línea en "Mis notas" antes de generarlo.
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-indigo-700 mb-3">
+                Genera el reporte HTML, el email frío y el post de LinkedIn.
+              </p>
+              <button
+                onClick={handleGenerateReport}
+                className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded hover:bg-indigo-700"
+              >
+                Generar reporte
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {hasReport && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+          <span className="text-green-600">✓</span>
+          <span className="text-sm font-medium text-green-700">Reporte generado</span>
+          {lead.reportUrl && (
+            <a
+              href={lead.reportUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto text-sm text-indigo-600 hover:underline"
+            >
+              Ver reporte →
+            </a>
+          )}
         </div>
       )}
 
       {/* Email */}
-      <section className="border rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-gray-700">Email frío</h3>
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block">Asunto</label>
-          <input
-            type="text"
-            value={emailSubject}
-            onChange={(e) => setEmailSubject(e.target.value)}
-            className="w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-          />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 mb-1 block">Cuerpo</label>
-          <textarea
-            value={emailBody}
-            onChange={(e) => setEmailBody(e.target.value)}
-            rows={6}
-            className="w-full border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand"
-          />
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <CopyButton text={`${emailSubject}\n\n${emailBody}`} label="Copiar email" />
-          {canSend && (
-            <button
-              onClick={handleSendEmail}
-              disabled={sending}
-              className="px-3 py-1.5 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50 disabled:cursor-wait"
-            >
-              {sending ? 'Enviando…' : `Enviar a ${lead.email}`}
-            </button>
-          )}
-          {!lead.email && (
-            <span className="text-xs text-gray-400">Sin email — envía manualmente</span>
-          )}
-        </div>
-      </section>
-
-      {/* PDF */}
-      {hasPdf && (
-        <section className="border rounded-lg p-4 space-y-2">
-          <h3 className="text-sm font-semibold text-gray-700">Reporte PDF</h3>
-          <p className="text-xs text-gray-500">El PDF se adjunta automáticamente al enviar el email via SES.</p>
-          <p className="text-xs text-gray-400 font-mono">{lead.reportPdfS3Key}</p>
+      {(hasReport || lead.emailSubject) && (
+        <section className="border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Email frío</h3>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Asunto</label>
+            <input
+              type="text"
+              value={emailSubject}
+              onChange={(e) => setEmailSubject(e.target.value)}
+              className="w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 mb-1 block">Cuerpo</label>
+            <textarea
+              value={emailBody}
+              onChange={(e) => setEmailBody(e.target.value)}
+              rows={10}
+              className="w-full border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand"
+            />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <CopyButton text={`${emailSubject}\n\n${emailBody}`} label="Copiar email" />
+            {canSend && (
+              <button
+                onClick={handleSendEmail}
+                disabled={sending}
+                className="px-3 py-1.5 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50"
+              >
+                {sending ? 'Enviando…' : `Enviar a ${lead.email}`}
+              </button>
+            )}
+            {!lead.email && (
+              <span className="text-xs text-gray-400">Sin email — envía manualmente</span>
+            )}
+          </div>
         </section>
       )}
 
@@ -128,14 +193,17 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
           <textarea
             value={linkedinPost}
             onChange={(e) => setLinkedinPost(e.target.value)}
-            rows={8}
+            rows={10}
             className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
           />
-          <CopyButton text={linkedinPost} label="Copiar post" />
+          <div className="flex items-center justify-between">
+            <CopyButton text={linkedinPost} label="Copiar post" />
+            <span className="text-xs text-gray-400">{linkedinPost.length} / 1200 chars</span>
+          </div>
         </section>
       )}
 
-      {/* Evento calendario + teléfono */}
+      {/* Calendario + teléfono */}
       <section className="border rounded-lg p-4 space-y-3">
         <h3 className="text-sm font-semibold text-gray-700">Seguimiento</h3>
         <div className="flex items-center gap-3 flex-wrap">

@@ -30,18 +30,43 @@ export const api = {
     return request(`/leads/${leadId}`);
   },
 
-  updateStatus(leadId: string, status: LeadStatus, note?: string): Promise<LeadItem> {
+  updateStatus(leadId: string, status: LeadStatus, note?: string, myNotes?: string): Promise<LeadItem> {
     return request(`/leads/${leadId}/status`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, note }),
+      body: JSON.stringify({ status, note, myNotes }),
     });
   },
 
-  generateReport(leadId: string): Promise<{ reportPdfS3Key: string; emailSubject: string }> {
+  updateNotes(leadId: string, myNotes: string): Promise<LeadItem> {
+    return request(`/leads/${leadId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ myNotes }),
+    });
+  },
+
+  triggerReport(leadId: string): Promise<{ message: string; leadId: string }> {
     return request(`/leads/${leadId}/report`, { method: 'POST' });
   },
 
   sendEmail(leadId: string): Promise<LeadItem> {
     return request(`/leads/${leadId}/send`, { method: 'POST' });
+  },
+
+  deleteLead(leadId: string): Promise<{ deleted: boolean; leadId: string }> {
+    return request(`/leads/${leadId}`, { method: 'DELETE' });
+  },
+
+  addLead(lead: {
+    businessName: string;
+    url: string;
+    city?: string;
+    category?: string;
+    phone?: string;
+    email?: string;
+  }): Promise<{ created: number; skipped: number; ids: string[] }> {
+    return request('/leads', {
+      method: 'POST',
+      body: JSON.stringify({ leads: [lead] }),
+    });
   },
 };
