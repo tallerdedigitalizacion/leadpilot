@@ -1,12 +1,15 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { v4 as uuidv4 } from 'uuid';
-import type { LeadItem } from '../shared/types';
+import type { LeadItem, TimelineEvent } from '../shared/types';
 
-const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
+const lambdaClient = new LambdaClient({});
 const TABLE = process.env.LEADS_TABLE_NAME!;
 const INGEST_API_KEY = process.env.INGEST_API_KEY!;
+const RUN_ANALYSIS_FN = process.env.RUN_ANALYSIS_FUNCTION_NAME!;
 
 function respond(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
   return {
@@ -60,9 +63,12 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
 
     const leadId = uuidv4();
     const now = Date.now();
+    const ingestedEvent: TimelineEvent = { at: now, event: 'INGESTED', by: 'system' };
+    const qualifiedEvent: TimelineEvent = { at: now, event: 'QUALIFIED', by: 'system' };
     const item: LeadItem = {
       leadId,
-      status: 'REVIEWING',
+      status: 'QUALIFIED',
+      qualifiedAt: now,
       businessName: lead.businessName,
       url: lead.url,
       phone: lead.phone,
@@ -70,10 +76,15 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       city: lead.city,
       category: lead.category,
       createdAt: now,
-      timeline: [{ at: now, event: 'INGESTED', by: 'system' }],
+      timeline: [ingestedEvent, qualifiedEvent],
     };
 
     await ddb.send(new PutCommand({ TableName: TABLE, Item: item }));
+    await lambdaClient.send(new InvokeCommand({
+      FunctionName: RUN_ANALYSIS_FN,
+      InvocationType: 'Event',
+      Payload: JSON.stringify({ leadId }),
+    }));
     ids.push(leadId);
     created++;
   }

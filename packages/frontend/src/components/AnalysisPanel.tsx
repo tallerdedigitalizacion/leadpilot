@@ -133,7 +133,7 @@ export default function AnalysisPanel({
 }) {
   const [activeTab, setActiveTab] = useState<Tab>(() => {
     if (lead.pagespeedMobile) return 'mobile';
-    if (lead.aiWebAnalysis) return 'claude';
+    if (lead.webAnalysis) return 'claude';
     return 'mobile';
   });
   const [retrying, setRetrying]       = useState(false);
@@ -144,7 +144,7 @@ export default function AnalysisPanel({
 
   const hasMobile   = Boolean(lead.pagespeedMobile || lead.pagespeedMobileRaw);
   const hasDesktop  = Boolean(lead.pagespeedDesktop || lead.pagespeedDesktopRaw);
-  const hasAnalysis = Boolean(lead.aiWebAnalysis);
+  const hasAnalysis = Boolean(lead.webAnalysis);
 
   const handleRetry = async () => {
     setRetrying(true);
@@ -283,10 +283,65 @@ export default function AnalysisPanel({
 
       {activeTab === 'claude' && (
         <div>
-          {hasAnalysis ? (
-            <pre className="whitespace-pre-wrap text-sm text-gray-700 bg-gray-50 rounded-lg p-4 font-sans leading-relaxed">
-              {lead.aiWebAnalysis}
-            </pre>
+          {lead.webAnalysis ? (
+            <div className="space-y-4">
+              <div>
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Captura analizada</div>
+                {lead.screenshotS3Key && lead.screenshotUrl ? (
+                  <a href={lead.screenshotUrl} target="_blank" rel="noreferrer" className="block border rounded-lg overflow-hidden">
+                    <div className="max-h-[600px] overflow-y-auto bg-gray-50">
+                      <img src={lead.screenshotUrl} alt="Captura de la web analizada" className="w-full block" />
+                    </div>
+                  </a>
+                ) : (
+                  <p className="text-sm text-gray-400 italic">Sin captura disponible.</p>
+                )}
+              </div>
+
+              <div className="bg-red-50 border-l-2 border-red-400 rounded p-3">
+                <div className="text-xs font-semibold text-red-500 uppercase tracking-wide mb-1">Dolor principal</div>
+                <p className="text-sm text-gray-800">{lead.webAnalysis.headlinePain}</p>
+              </div>
+
+              <div>
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Evaluación visual</div>
+                <p className="text-sm text-gray-700 leading-relaxed">{lead.webAnalysis.visualAssessment}</p>
+              </div>
+
+              {lead.webAnalysis.performanceSummary.coreWebVitalsIssues.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Core Web Vitals</div>
+                  <ul className="text-sm text-gray-700 list-disc list-inside space-y-0.5">
+                    {lead.webAnalysis.performanceSummary.coreWebVitalsIssues.map((issue, i) => (
+                      <li key={i}>{issue}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {lead.webAnalysis.complianceFlag && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Cumplimiento / cookies</div>
+                  <p className="text-sm text-gray-700">{lead.webAnalysis.complianceFlag}</p>
+                </div>
+              )}
+
+              {lead.webAnalysis.top3Fixes.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Top 3 fixes</div>
+                  <ol className="text-sm text-gray-700 list-decimal list-inside space-y-0.5">
+                    {lead.webAnalysis.top3Fixes.map((fix, i) => (
+                      <li key={i}>{fix}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+
+              <div className="bg-gray-50 rounded p-3">
+                <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Gancho de cierre</div>
+                <p className="text-sm text-gray-700 italic">{lead.webAnalysis.closingHook}</p>
+              </div>
+            </div>
           ) : (
             <p className="text-sm text-gray-400 italic">Sin análisis de Claude todavía.</p>
           )}

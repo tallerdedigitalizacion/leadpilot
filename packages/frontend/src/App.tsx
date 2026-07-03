@@ -2,6 +2,8 @@ import { Routes, Route, NavLink, Link, useSearchParams } from 'react-router-dom'
 import LeadList from './pages/LeadList';
 import LeadDetail from './pages/LeadDetail';
 import AddLead from './pages/AddLead';
+import Dashboard from './pages/Dashboard';
+import ScrapeLeads from './pages/ScrapeLeads';
 import type { LeadStatus } from './types/lead';
 
 const NAV_STATUSES: { label: string; status: LeadStatus }[] = [
@@ -12,6 +14,7 @@ const NAV_STATUSES: { label: string; status: LeadStatus }[] = [
   { label: 'Llamados',       status: 'CALLED' },
   { label: 'Respondidos',    status: 'RESPONDED' },
   { label: 'Sin respuesta',  status: 'NO_RESPONSE' },
+  { label: 'Cerrados',       status: 'CLOSED' },
   { label: 'Archivados',     status: 'ARCHIVED' },
 ];
 
@@ -41,6 +44,26 @@ function Nav() {
       >
         + Añadir
       </Link>
+      <NavLink
+        to="/scrape"
+        className={({ isActive }) =>
+          `px-3 py-1 rounded text-sm font-medium transition-colors ${
+            isActive ? 'bg-white text-brand' : 'text-white/80 hover:bg-white/20'
+          }`
+        }
+      >
+        Scraper Maps
+      </NavLink>
+      <NavLink
+        to="/dashboard"
+        className={({ isActive }) =>
+          `ml-1 px-3 py-1 rounded text-sm font-medium transition-colors ${
+            isActive ? 'bg-white text-brand' : 'text-white/80 hover:bg-white/20'
+          }`
+        }
+      >
+        Dashboard
+      </NavLink>
     </nav>
   );
 }
@@ -60,6 +83,8 @@ export default function App() {
           <Route path="/" element={<LeadList />} />
           <Route path="/leads/new" element={<AddLead />} />
           <Route path="/leads/:leadId" element={<LeadDetail />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/scrape" element={<ScrapeLeads />} />
         </Routes>
       </main>
     </div>

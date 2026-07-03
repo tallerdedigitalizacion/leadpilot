@@ -1,4 +1,4 @@
-import type { LeadItem, LeadStatus } from '../types/lead';
+import type { LeadItem, LeadStatus, ScrapeJob } from '../types/lead';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL as string;
 const API_KEY = import.meta.env.VITE_API_KEY as string;
@@ -44,15 +44,70 @@ export const api = {
     });
   },
 
+  markLinkedinPublished(leadId: string): Promise<LeadItem> {
+    return request(`/leads/${leadId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ linkedinPublished: true }),
+    });
+  },
+
+  // Botón de prueba manual — dispara el seguimiento 1 o 2 al instante, sin esperar 7/14 días.
+  async simulateFollowup(
+    leadId: string,
+    followupNumber: 1 | 2
+  ): Promise<{ ok: boolean; error?: string; lead?: LeadItem }> {
+    try {
+      const res = await fetch(`${BASE_URL}/leads/${leadId}/simulate-followup`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({ followupNumber }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) return { ok: false, error: data?.error ?? `${res.status} ${res.statusText}` };
+      return { ok: true, lead: data };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Error de red' };
+    }
+  },
+
   triggerReport(leadId: string): Promise<{ message: string; leadId: string }> {
     return request(`/leads/${leadId}/report`, { method: 'POST' });
   },
 
-  sendEmail(leadId: string, emailSubject: string, emailBody: string, toSelf = false): Promise<LeadItem | { preview: true }> {
-    return request(`/leads/${leadId}/send`, {
-      method: 'POST',
-      body: JSON.stringify({ emailSubject, emailBody, toSelf }),
+  // Never throws on a failed send — the whole point is to force the caller to check `ok`
+  // instead of assuming a resolved promise means the email actually landed.
+  async sendEmail(
+    leadId: string,
+    emailSubject: string,
+    emailBody: string,
+    toSelf = false,
+    toAddresses?: string[]
+  ): Promise<{ ok: boolean; preview?: boolean; error?: string; lead?: LeadItem }> {
+    try {
+      const res = await fetch(`${BASE_URL}/leads/${leadId}/send`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
+        body: JSON.stringify({ emailSubject, emailBody, toSelf, toAddresses }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!data || typeof data.ok !== 'boolean') {
+        return { ok: false, error: `${res.status} ${res.statusText}` };
+      }
+      return data;
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'Error de red al enviar el email' };
+    }
+  },
+
+  updateEmails(leadId: string, emails: string[]): Promise<LeadItem> {
+    return request(`/leads/${leadId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ emails }),
     });
+  },
+
+  getStats(): Promise<{ counts: Record<string, number> }> {
+    return request('/stats');
   },
 
   retryAnalysis(leadId: string): Promise<{ message: string; leadId: string }> {
@@ -89,5 +144,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ leads: [lead] }),
     });
+  },
+
+  startScrapeJob(input: { query: string; city: string; extractEmails: boolean }): Promise<{ jobId: string }> {
+    return request('/scrape-jobs', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  getScrapeJob(jobId: string): Promise<ScrapeJob> {
+    return request(`/scrape-jobs/${jobId}`);
   },
 };

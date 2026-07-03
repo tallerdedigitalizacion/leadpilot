@@ -6,6 +6,7 @@ import { Database } from './constructs/database';
 import { Storage } from './constructs/storage';
 import { Api } from './constructs/api';
 import { Frontend } from './constructs/frontend';
+import { Scraping } from './constructs/scraping';
 
 export class LeadPilotStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -14,18 +15,25 @@ export class LeadPilotStack extends cdk.Stack {
     const database = new Database(this, 'Database');
     const storage = new Storage(this, 'Storage');
     const frontend = new Frontend(this, 'Frontend');
+    const scraping = new Scraping(this, 'Scraping', {
+      reportsBucket: storage.reportsBucket,
+    });
 
     const api = new Api(this, 'Api', {
       table: database.table,
+      sendCountersTable: database.sendCountersTable,
+      scrapeJobsTable: database.scrapeJobsTable,
       reportsBucket: storage.reportsBucket,
       ingestApiKey: process.env.INGEST_API_KEY ?? 'change-me-before-deploy',
       frontendUrl: frontend.distribution.domainName,
+      canSpamAddress: process.env.CAN_SPAM_ADDRESS,
+      scraping,
     });
 
-    // EventBridge rule: chequea NO_RESPONSE diariamente
-    new events.Rule(this, 'NoResponseRule', {
+    // EventBridge rule: corre la secuencia de seguimiento diariamente
+    new events.Rule(this, 'FollowupSequencerRule', {
       schedule: events.Schedule.rate(cdk.Duration.days(1)),
-      targets: [new targets.LambdaFunction(api.noResponseFn)],
+      targets: [new targets.LambdaFunction(api.followupSequencerFn)],
     });
 
     // Outputs

@@ -36,18 +36,42 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   const [previewing, setPreviewing]     = useState(false);
   const [previewSent, setPreviewSent]   = useState(false);
   const [regenLoading, setRegenLoading] = useState(false);
+  const [markingLinkedin, setMarkingLinkedin] = useState(false);
+  const [simulatingFollowup, setSimulatingFollowup] = useState<1 | 2 | null>(null);
   const [error, setError]               = useState<string | null>(null);
+  const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isGenerating = Boolean(lead.isGeneratingReport);
   const hasReport    = Boolean(lead.reportHtmlS3Key);
-  const hasNotes     = Boolean(lead.myNotes?.trim());
+
+  const allEmails = [...new Set([
+    ...(lead.email ? [lead.email] : []),
+    ...(lead.emails ?? []),
+  ])];
+
+  // Derived from the persisted timeline, not local state — survives refresh and reflects
+  // the real outcome of the last SES call, not just "the button was clicked".
+  const lastRealSend = [...lead.timeline]
+    .filter((ev) => ev.event === 'EMAIL_SENT' || ev.event === 'EMAIL_SEND_FAILED')
+    .sort((a, b) => b.at - a.at)[0];
+
+  const lastLinkedinPublish = [...lead.timeline]
+    .filter((ev) => ev.event === 'LINKEDIN_POST_PUBLISHED')
+    .sort((a, b) => b.at - a.at)[0];
 
   useEffect(() => {
     setEmailSubject(lead.emailSubject ?? '');
     setEmailBody(lead.emailBody ?? '');
     setLinkedinPost(lead.linkedinPost ?? '');
   }, [lead.emailSubject, lead.emailBody, lead.linkedinPost]);
+
+  // Pre-select all emails when they change
+  useEffect(() => {
+    setSelectedEmails(allEmails);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead.email, (lead.emails ?? []).join(',')]);
+
 
   // Poll si se está generando el reporte
   useEffect(() => {
@@ -90,14 +114,17 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   };
 
   const handleSendEmail = async () => {
+    if (selectedEmails.length === 0) return;
     setSending(true);
     setError(null);
     try {
-      const res = await api.sendEmail(lead.leadId, emailSubject, emailBody);
-      if ('leadId' in res) onLeadUpdate(res as LeadItem);
-      setSent(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error enviando email');
+      const res = await api.sendEmail(lead.leadId, emailSubject, emailBody, false, selectedEmails);
+      if (res.lead) onLeadUpdate(res.lead);
+      if (res.ok) {
+        setSent(true);
+      } else {
+        setError(`El email NO se envió: ${res.error ?? 'error desconocido'}`);
+      }
     } finally {
       setSending(false);
     }
@@ -107,13 +134,41 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
     setPreviewing(true);
     setError(null);
     try {
-      await api.sendEmail(lead.leadId, emailSubject, emailBody, true);
-      setPreviewSent(true);
-      setTimeout(() => setPreviewSent(false), 4000);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error enviando prueba');
+      const res = await api.sendEmail(lead.leadId, emailSubject, emailBody, true);
+      if (res.lead) onLeadUpdate(res.lead);
+      if (res.ok) {
+        setPreviewSent(true);
+        setTimeout(() => setPreviewSent(false), 4000);
+      } else {
+        setError(`La prueba NO se envió: ${res.error ?? 'error desconocido'}`);
+      }
     } finally {
       setPreviewing(false);
+    }
+  };
+
+  const handleSimulateFollowup = async (followupNumber: 1 | 2) => {
+    setSimulatingFollowup(followupNumber);
+    setError(null);
+    try {
+      const res = await api.simulateFollowup(lead.leadId, followupNumber);
+      if (res.lead) onLeadUpdate(res.lead);
+      if (!res.ok) setError(`No se pudo simular el seguimiento ${followupNumber}: ${res.error ?? 'error desconocido'}`);
+    } finally {
+      setSimulatingFollowup(null);
+    }
+  };
+
+  const handleMarkLinkedinPublished = async () => {
+    setMarkingLinkedin(true);
+    setError(null);
+    try {
+      const updated = await api.markLinkedinPublished(lead.leadId);
+      onLeadUpdate(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al marcar como publicado');
+    } finally {
+      setMarkingLinkedin(false);
     }
   };
 
@@ -171,13 +226,6 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
               ↻ Regenerar reporte
             </button>
           </div>
-        ) : !hasNotes ? (
-          <div className="bg-indigo-50 rounded p-3">
-            <p className="text-sm font-medium text-indigo-700 mb-1">Añade tus notas primero</p>
-            <p className="text-xs text-indigo-500">
-              El reporte incluye tus observaciones. Escribe al menos una línea en "Mis notas" antes de generarlo.
-            </p>
-          </div>
         ) : (
           <div className="bg-indigo-50 rounded p-3">
             <p className="text-sm text-indigo-700 mb-3">
@@ -232,8 +280,25 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
             <CopyButton text={emailSubject} label="Copiar asunto" />
             <CopyButton text={emailBody}    label="Copiar cuerpo" />
           </div>
-          <div className="flex items-center gap-2 flex-wrap pt-1 border-t">
-            {/* Preview: sends to info@tallerdedigitalizacion.com, subject prefixed [PREVIEW] */}
+          <div className="pt-1 border-t space-y-3">
+            {lastRealSend && (
+              <div
+                className={`text-xs px-2.5 py-1.5 rounded ${
+                  lastRealSend.event === 'EMAIL_SENT'
+                    ? 'bg-green-50 text-green-700'
+                    : 'bg-red-50 text-red-700 font-medium'
+                }`}
+              >
+                {lastRealSend.event === 'EMAIL_SENT' ? '✓ Enviado' : '✗ Último envío falló'} el{' '}
+                {new Date(lastRealSend.at).toLocaleString('es-ES', {
+                  day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                })}
+                {Array.isArray(lastRealSend.meta?.to) && ` a ${(lastRealSend.meta!.to as string[]).join(', ')}`}
+                {lastRealSend.event === 'EMAIL_SEND_FAILED' && lastRealSend.note && ` — ${lastRealSend.note}`}
+              </div>
+            )}
+
+            {/* Enviarme prueba */}
             <button
               onClick={handlePreviewEmail}
               disabled={previewing || previewSent}
@@ -241,17 +306,59 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
             >
               {previewing ? 'Enviando…' : previewSent ? '✓ Prueba enviada a ti' : 'Enviarme prueba'}
             </button>
-            {lead.email && lead.status === 'ANALYZED' && (
-              <button
-                onClick={handleSendEmail}
-                disabled={sending || sent}
-                className="px-3 py-1.5 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50"
-              >
-                {sending ? 'Enviando…' : sent ? '✓ Enviado' : `Enviar a ${lead.email}`}
-              </button>
+
+            {/* Selector de emails */}
+            {allEmails.length > 0 && lead.status === 'ANALYZED' && (
+              <div>
+                <p className="text-xs text-gray-400 mb-1.5">Enviar a:</p>
+                <div className="space-y-1 mb-2">
+                  {allEmails.map((e) => (
+                    <label key={e} className="flex items-center gap-2 cursor-pointer text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedEmails.includes(e)}
+                        onChange={(ev) =>
+                          setSelectedEmails((prev) =>
+                            ev.target.checked ? [...prev, e] : prev.filter((x) => x !== e)
+                          )
+                        }
+                        className="rounded"
+                      />
+                      <span className="text-gray-700">{e}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleSendEmail}
+                    disabled={sending || sent || selectedEmails.length === 0}
+                    className="px-3 py-1.5 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50"
+                  >
+                    {sending
+                      ? 'Enviando…'
+                      : sent
+                      ? '✓ Enviado'
+                      : selectedEmails.length === 1
+                      ? `Enviar email a ${selectedEmails[0]}`
+                      : `Enviar emails (${selectedEmails.length})`}
+                  </button>
+                  {allEmails.length > 1 && !sent && (
+                    <button
+                      onClick={() =>
+                        setSelectedEmails(
+                          selectedEmails.length === allEmails.length ? [] : allEmails
+                        )
+                      }
+                      className="text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      {selectedEmails.length === allEmails.length ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                    </button>
+                  )}
+                </div>
+              </div>
             )}
-            {!lead.email && (
-              <span className="text-xs text-gray-400">Sin email — envía desde Zoho</span>
+            {allEmails.length === 0 && (
+              <span className="text-xs text-gray-400">Sin emails — añade uno desde la ficha del lead</span>
             )}
           </div>
         </section>
@@ -287,8 +394,44 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
             >
               Publicar en LinkedIn →
             </a>
+            <button
+              onClick={handleMarkLinkedinPublished}
+              disabled={markingLinkedin}
+              className="px-3 py-1.5 text-sm font-medium rounded border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
+              {markingLinkedin ? 'Marcando…' : 'Marcar como publicado'}
+            </button>
             <span className="text-xs text-gray-400 ml-auto">{linkedinPost.length} / 1200 chars</span>
           </div>
+          {lastLinkedinPublish && (
+            <div className="text-xs px-2.5 py-1.5 rounded bg-green-50 text-green-700">
+              ✓ Publicado ({lastLinkedinPublish.meta?.method === 'automatic' ? 'automático' : 'manual'}) el{' '}
+              {new Date(lastLinkedinPublish.at).toLocaleString('es-ES', {
+                day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Simular seguimiento — prueba manual sin esperar 7/14 días reales */}
+      {(lead.status === 'SENT' || lead.status === 'FOLLOWUP_1') && (
+        <section className="border rounded-lg p-4 space-y-2 bg-amber-50 border-amber-200">
+          <h3 className="text-sm font-semibold text-amber-800">Simular seguimiento (prueba)</h3>
+          <p className="text-xs text-amber-700">
+            Dispara el email de seguimiento correspondiente ahora mismo, sin esperar los días reales. No consume el freno diario.
+          </p>
+          <button
+            onClick={() => handleSimulateFollowup(lead.status === 'SENT' ? 1 : 2)}
+            disabled={simulatingFollowup !== null}
+            className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded hover:bg-amber-700 disabled:opacity-50"
+          >
+            {simulatingFollowup !== null
+              ? 'Enviando…'
+              : lead.status === 'SENT'
+              ? 'Simular seguimiento 1 (día 7)'
+              : 'Simular seguimiento 2 (día 14)'}
+          </button>
         </section>
       )}
 

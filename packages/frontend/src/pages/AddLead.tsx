@@ -60,6 +60,8 @@ export default function AddLead() {
         return;
       }
 
+      // El backend (ingest-leads) ya auto-califica y dispara el análisis — no hace falta
+      // un segundo viaje para calificar manualmente.
       const newId = result.ids[0];
       navigate(newId ? `/leads/${newId}` : '/');
     } catch (err) {

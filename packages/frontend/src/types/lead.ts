@@ -5,9 +5,14 @@ export type LeadStatus =
   | 'QUALIFIED'
   | 'ANALYZED'
   | 'SENT'
+  | 'ENGAGED'
+  | 'BOOKED'
+  | 'FOLLOWUP_1'
+  | 'FOLLOWUP_2'
   | 'CALLED'
   | 'RESPONDED'
-  | 'NO_RESPONSE';
+  | 'NO_RESPONSE'
+  | 'CLOSED';
 
 export interface PageSpeedScore {
   performance: number;
@@ -25,6 +30,36 @@ export interface TimelineEvent {
   event: string;
   by: 'system' | 'user';
   note?: string;
+  meta?: Record<string, unknown>;
+}
+
+export interface WebAnalysis {
+  headlinePain: string;
+  visualAssessment: string;
+  performanceSummary: {
+    mobileScore: number;
+    desktopScore: number;
+    coreWebVitalsIssues: string[];
+  };
+  complianceFlag: string;
+  top3Fixes: string[];
+  closingHook: string;
+}
+
+export type ScrapeJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
+
+export interface ScrapeJob {
+  jobId: string;
+  status: ScrapeJobStatus;
+  query: string;
+  city: string;
+  extractEmails: boolean;
+  resultCount?: number;
+  createdCount?: number;
+  skippedCount?: number;
+  errorMessage?: string;
+  createdAt: number;
+  finishedAt?: number;
 }
 
 export interface LeadItem {
@@ -34,17 +69,33 @@ export interface LeadItem {
   url: string;
   phone?: string;
   email?: string;
+  emails?: string[];
   city?: string;
   category?: string;
   createdAt: number;
   qualifiedAt?: number;
   analyzedAt?: number;
   sentAt?: number;
+  engagedAt?: number;
+  clickCount?: number;
+  lastClickedAt?: number;
+  unsubscribed?: boolean;
+  unsubscribedAt?: number;
+  bookingUid?: string;
+  bookingStartTime?: number;
+  bookingEndTime?: number;
+  bookingCancelledAt?: number;
+  followup1SentAt?: number;
+  followup2SentAt?: number;
   pagespeedMobile?: PageSpeedScore;
   pagespeedDesktop?: PageSpeedScore;
   pagespeedMobileRaw?: string;
   pagespeedDesktopRaw?: string;
-  aiWebAnalysis?: string;
+  webAnalysis?: WebAnalysis;
+  screenshotS3Key?: string;
+  screenshotUrl?: string; // calculado por get-lead en cada request, nunca persistido
+  cookieDetected?: boolean;
+  cookieTool?: string;
   myNotes?: string;
   isGeneratingReport?: boolean;
   reportGenerationStartedAt?: number;

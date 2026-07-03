@@ -7,8 +7,8 @@ import AnalysisPanel from '../components/AnalysisPanel';
 import ResourcesPanel from '../components/ResourcesPanel';
 import type { LeadItem } from '../types/lead';
 
-const RESOURCES_STATUSES = new Set(['ANALYZED', 'SENT', 'CALLED', 'RESPONDED', 'NO_RESPONSE']);
-const ACTIVE_STATUSES    = new Set(['REVIEWING', 'QUALIFIED', 'ANALYZED', 'SENT', 'CALLED', 'RESPONDED', 'NO_RESPONSE']);
+const RESOURCES_STATUSES = new Set(['ANALYZED', 'SENT', 'ENGAGED', 'BOOKED', 'FOLLOWUP_1', 'FOLLOWUP_2', 'CALLED', 'RESPONDED', 'NO_RESPONSE', 'CLOSED']);
+const ACTIVE_STATUSES    = new Set(['REVIEWING', 'QUALIFIED', 'ANALYZED', 'SENT', 'ENGAGED', 'BOOKED', 'FOLLOWUP_1', 'FOLLOWUP_2', 'CALLED', 'RESPONDED', 'NO_RESPONSE', 'CLOSED']);
 
 export default function LeadDetail() {
   const { leadId } = useParams<{ leadId: string }>();
@@ -17,10 +17,27 @@ export default function LeadDetail() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [note, setNote]           = useState('');
-  const [myNotes, setMyNotes]     = useState('');
+  const [note, setNote]             = useState('');
+  const [myNotes, setMyNotes]       = useState('');
   const [notesSaved, setNotesSaved] = useState(false);
+  const [newEmail, setNewEmail]     = useState('');
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleAddEmail = async () => {
+    if (!lead || !newEmail.trim()) return;
+    const trimmed = newEmail.trim().toLowerCase();
+    const current = lead.emails ?? [];
+    if (current.includes(trimmed) || lead.email === trimmed) return;
+    const updated = await api.updateEmails(lead.leadId, [...current, trimmed]);
+    setLead(updated);
+    setNewEmail('');
+  };
+
+  const handleRemoveEmail = async (email: string) => {
+    if (!lead) return;
+    const updated = await api.updateEmails(lead.leadId, (lead.emails ?? []).filter((e) => e !== email));
+    setLead(updated);
+  };
 
   useEffect(() => {
     if (!leadId) return;
@@ -30,20 +47,23 @@ export default function LeadDetail() {
       .finally(() => setLoading(false));
   }, [leadId]);
 
-  // Poll mientras el lead está en QUALIFIED (esperando análisis)
+  // Poll mientras el pipeline automático sigue trabajando: QUALIFIED (esperando análisis) o
+  // ANALYZED sin reporte todavía (generate-report + auto-envío + LinkedIn corriendo en
+  // segundo plano) — sin esto la página queda estática hasta que el usuario refresca a mano.
+  const isAutoPipelineRunning = lead?.status === 'QUALIFIED' || (lead?.status === 'ANALYZED' && !lead?.reportHtmlS3Key);
   useEffect(() => {
-    if (lead?.status !== 'QUALIFIED') {
+    if (!isAutoPipelineRunning || !lead) {
       if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       return;
     }
     pollRef.current = setInterval(async () => {
       try {
         const updated = await api.getLead(lead.leadId);
-        if (updated.status !== 'QUALIFIED') { setLead(updated); }
+        setLead(updated);
       } catch { /* silencio */ }
     }, 5000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [lead?.status, lead?.leadId]);
+  }, [isAutoPipelineRunning, lead?.leadId]);
 
   const handleAction = async (action: string, status: LeadItem['status'], withNote = false) => {
     if (!lead) return;
@@ -164,7 +184,7 @@ export default function LeadDetail() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
           {lead.city && (
             <div><span className="text-gray-400 text-xs block">Ciudad</span>{lead.city}</div>
           )}
@@ -176,9 +196,51 @@ export default function LeadDetail() {
               <span className="font-mono">{lead.phone}</span>
             </div>
           )}
-          {lead.email && (
-            <div><span className="text-gray-400 text-xs block">Email</span>{lead.email}</div>
-          )}
+        </div>
+
+        {/* Emails section */}
+        <div className="mt-3 pt-3 border-t">
+          <span className="text-xs text-gray-400 block mb-2">Emails</span>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {lead.email && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 rounded text-xs text-gray-700">
+                {lead.email}
+                <span className="text-gray-400 text-[10px] ml-0.5">principal</span>
+              </span>
+            )}
+            {(lead.emails ?? []).map((e) => (
+              <span key={e} className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 rounded text-xs text-indigo-700">
+                {e}
+                <button
+                  onClick={() => handleRemoveEmail(e)}
+                  className="text-indigo-300 hover:text-indigo-600 ml-0.5 leading-none"
+                  title="Eliminar"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            {!lead.email && (lead.emails ?? []).length === 0 && (
+              <span className="text-xs text-gray-400 italic">Sin emails</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="email"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddEmail()}
+              placeholder="Añadir email…"
+              className="border rounded px-2.5 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-brand w-56"
+            />
+            <button
+              onClick={handleAddEmail}
+              disabled={!newEmail.trim()}
+              className="px-3 py-1 text-sm border rounded text-gray-600 hover:bg-gray-50 disabled:opacity-40"
+            >
+              + Añadir
+            </button>
+          </div>
         </div>
       </div>
 
@@ -224,24 +286,63 @@ export default function LeadDetail() {
         </div>
       )}
 
-      {lead.status === 'SENT' && (
+      {(lead.status === 'SENT' || lead.status === 'ENGAGED' || lead.status === 'BOOKED' || lead.status === 'FOLLOWUP_1' || lead.status === 'FOLLOWUP_2' || lead.status === 'CALLED' || lead.status === 'RESPONDED') && (
         <div className="bg-white border rounded-lg p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Seguimiento</h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleAction('called', 'CALLED')}
-              disabled={actionLoading === 'called'}
-              className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded hover:bg-teal-700 disabled:opacity-50"
-            >
-              Registrar llamada
-            </button>
-            <button
-              onClick={() => handleAction('responded', 'RESPONDED')}
-              disabled={actionLoading === 'responded'}
-              className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 disabled:opacity-50"
-            >
-              Respondió
-            </button>
+          {lead.status === 'ENGAGED' && (
+            <p className="text-xs text-cyan-700 bg-cyan-50 rounded px-2.5 py-1.5 mb-3">
+              Hizo clic en el reporte{lead.clickCount ? ` (${lead.clickCount}x)` : ''} — aún no contestó por teléfono/email.
+            </p>
+          )}
+          {(lead.status === 'FOLLOWUP_1' || lead.status === 'FOLLOWUP_2') && (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded px-2.5 py-1.5 mb-3">
+              Secuencia automática de seguimiento — {lead.status === 'FOLLOWUP_1' ? 'primer' : 'segundo'} email enviado
+              {lead.status === 'FOLLOWUP_1' && lead.followup1SentAt
+                ? ` el ${new Date(lead.followup1SentAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`
+                : ''}
+              {lead.status === 'FOLLOWUP_2' && lead.followup2SentAt
+                ? ` el ${new Date(lead.followup2SentAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' })}`
+                : ''}
+              , aún sin respuesta.
+            </p>
+          )}
+          {lead.bookingStartTime && (
+            <p className="text-xs text-violet-700 bg-violet-50 rounded px-2.5 py-1.5 mb-3">
+              Reunión agendada:{' '}
+              {new Date(lead.bookingStartTime).toLocaleString('es-ES', {
+                day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+              })}
+              {lead.bookingCancelledAt && <span className="text-red-600 font-medium"> — cancelada</span>}
+            </p>
+          )}
+          <div className="flex gap-2 flex-wrap">
+            {(lead.status === 'SENT' || lead.status === 'ENGAGED' || lead.status === 'BOOKED' || lead.status === 'FOLLOWUP_1' || lead.status === 'FOLLOWUP_2') && (
+              <button
+                onClick={() => handleAction('called', 'CALLED')}
+                disabled={actionLoading === 'called'}
+                className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded hover:bg-teal-700 disabled:opacity-50"
+              >
+                Registrar llamada
+              </button>
+            )}
+            {(lead.status === 'SENT' || lead.status === 'ENGAGED' || lead.status === 'BOOKED' || lead.status === 'FOLLOWUP_1' || lead.status === 'FOLLOWUP_2' || lead.status === 'CALLED') && (
+              <button
+                onClick={() => handleAction('responded', 'RESPONDED')}
+                disabled={actionLoading === 'responded'}
+                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 disabled:opacity-50"
+              >
+                Respondió
+              </button>
+            )}
+            {(lead.status === 'BOOKED' || lead.status === 'CALLED' || lead.status === 'RESPONDED') && (
+              <button
+                onClick={() => handleAction('closed', 'CLOSED')}
+                disabled={actionLoading === 'closed'}
+                className="px-4 py-2 bg-emerald-700 text-white text-sm font-medium rounded hover:bg-emerald-800 disabled:opacity-50"
+              >
+                ✓ Cerrar deal
+              </button>
+            )}
           </div>
         </div>
       )}
