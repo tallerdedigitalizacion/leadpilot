@@ -2,7 +2,8 @@
 
 > Archivo de referencia interna. Claude lo lee al empezar sesiones nuevas para mantener
 > el hilo del backlog entre conversaciones. Actualizar aquí en vez de solo mencionar
-> pendientes en el chat.
+> pendientes en el chat. Para arquitectura, comandos y gotchas operativos, ver
+> [`CLAUDE.md`](CLAUDE.md) — este archivo es solo el backlog/historial de decisiones.
 
 ## Pendiente
 
@@ -20,8 +21,16 @@ abajo). Sigue pendiente decidir:
   del objeto de Google Maps** — gosom no distingue en absoluto; SerpApi solo lo distingue
   vía `local_ads.ads` del motor `google` (no `google_maps`), y ni así es perfecto (el
   anuncio no trae el sitio web propio, hay que cruzarlo por nombre contra `local_results`,
-  y frecuentemente no hay coincidencia). Si se quiere una señal de calidad más confiable
-  a futuro, evaluar alternativas (ver sugerencias técnicas al final).
+  y frecuentemente no hay coincidencia).
+- **Alternativa evaluada (2026-07-21, no implementada aún)**: en vez de depender de que
+  un scraper marque "patrocinado", detectar directamente en el sitio del lead si tiene
+  instalado el tag de conversión de Google Ads (patrón `AW-` en el HTML, o script de
+  `googleads.g.doubleclick.net`). Es la misma señal real que se busca ("está pagando por
+  publicidad"), se puede agregar gratis al fetch que ya se hace para extraer el email
+  (`findEmailOnWebsite` en `serpapi-provider.ts` / el equivalente en `gosom-provider.ts`),
+  y no depende de ninguno de los 2 scrapers. Contra: detecta que el tag está instalado,
+  no que la campaña esté activa hoy (puede haber falsos positivos de campañas viejas sin
+  desactivar) — aun así, margen de error más chico que la heurística actual de SerpApi.
 
 ## Completado (2026-07-21)
 
@@ -76,6 +85,54 @@ porque no hay a quién enviarles nada. `sendLeadEmail` los descarta silenciosame
 (`no-recipients`, sin loguear nada al timeline). Si se quieren rescatar, hay que
 añadirles un email a mano (botón "+ Añadir" en la ficha del lead) antes de poder
 reintentar el envío.
+
+## Completado (2026-07-21, sesión screenshot/análisis)
+
+Se investigó por qué un lead (`HomeFound Real Estate Group Boise`) nunca tuvo análisis de
+Claude. Cadena de 4 problemas reales, todos arreglados:
+
+1. **Timeout de 25s muy ajustado** para el fetch HTTP al screenshot-service — algunos
+   sitios (fuentes web lentas) tardan más. Subido a 60s
+   ([`analysis-worker/index.ts`](packages/functions/analysis-worker/index.ts), función
+   `requestScreenshot`).
+2. **La imagen de Docker del screenshot-service en ECR estaba desactualizada** (del
+   2026-07-02) — nunca se había reconstruido después de agregar `resizeIfTooLarge()`
+   (fix de un límite de Claude: máximo 8000px por dimensión en la imagen). Por eso
+   páginas largas seguían mandando screenshots sin redimensionar y Claude las rechazaba.
+3. **Al reconstruir la imagen, se subió para la plataforma equivocada** (amd64) dos veces
+   seguidas — la tarea de Fargate del screenshot-service está pineada a
+   `ecs.CpuArchitecture.ARM64` en `scraping.ts`. Un `docker build --platform amd64` (o
+   sin flag, en un Mac Apple Silicon) produce una imagen que Fargate no puede ni
+   descargar (`CannotPullContainerError`), y el fallo se manifiesta primero como un
+   timeout confuso ("Timeout esperando que la tarea de captura llegue a RUNNING") antes
+   de que ECS reporte el error real. **Comando correcto, documentado también en
+   `CLAUDE.md`:**
+   ```
+   docker buildx build --platform linux/arm64 -t <ecr-uri>:latest --push packages/screenshot-service
+   ```
+   Verificar con `docker manifest inspect <imagen>` → `"architecture": "arm64"` antes de
+   dar por bueno un rebuild.
+4. **Margen de arranque de la tarea ECS** (60s → 120s en `waitForPublicIp`) — la imagen
+   nueva pesa más (~730MB con las dependencias de `sharp`) y a veces tarda más en
+   arrancar en frío.
+
+Verificado end-to-end: el lead de prueba ya tiene `webAnalysis` y `screenshotS3Key`
+completos. Este era un problema de infraestructura (imagen vieja + timeouts ajustados +
+arquitectura equivocada), no algo específico de ese lead — debería beneficiar a
+cualquier análisis futuro, sobre todo de sitios con carga lenta.
+
+## Limpieza pendiente (menor, no urgente)
+
+- **Parámetro SSM huérfano**: `/leadpilot/followup-daily-cap` existe en SSM (valor `10`)
+  pero ningún código lo lee — el parámetro real es `/leadpilot/daily-send-cap` (wireado a
+  `SHARED_DAILY_CAP_PARAM`, valor `20`). Confirmar y borrar el huérfano para no confundir
+  a futuro.
+- **`packages/screenshot-service` no tiene ningún paso de build/push en CI ni en
+  `cdk deploy`** — es la única pieza del stack que se despliega completamente a mano
+  (ver `CLAUDE.md`). Si esto se vuelve a olvidar, va a volver a pasar el mismo bug del
+  punto 2 de arriba. Vale la pena automatizarlo (ej. un script `npm run deploy` en ese
+  workspace, o un `DockerImageAsset` de CDK que build+pushee automáticamente en cada
+  `cdk deploy` — este último cambiaría el flujo actual de ECR manual).
 
 ## Decisiones temporales (revertir o revisar)
 
@@ -133,7 +190,3 @@ reintentar el envío.
   Funciona pero es aproximada — si en el futuro se vuelve crítico (ítem 1), documentar
   mejor sus falsos negativos conocidos (ads que no matchean por diferencias grandes de
   naming) en vez de asumir que todo ad sin match es "sin sitio real".
-- **Test jobs/leads sueltos**: durante la verificación de sesiones anteriores se crearon
-  varios registros de prueba en `leadpilot-scrape-jobs` (jobIds de test, algunos FAILED
-  por bugs ya arreglados). No afectan el funcionamiento pero se pueden limpiar si
-  molestan en el dashboard de jobs.
