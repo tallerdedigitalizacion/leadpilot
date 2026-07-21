@@ -146,7 +146,7 @@ export const api = {
     });
   },
 
-  startScrapeJob(input: { query: string; city: string; extractEmails: boolean }): Promise<{ jobId: string }> {
+  startScrapeJob(input: { query: string; city: string; extractEmails: boolean; provider?: 'gosom' | 'serpapi' }): Promise<{ jobId: string }> {
     return request('/scrape-jobs', {
       method: 'POST',
       body: JSON.stringify(input),

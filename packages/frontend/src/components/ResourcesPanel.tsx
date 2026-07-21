@@ -8,25 +8,6 @@ interface Props {
   onLeadUpdate: (lead: LeadItem) => void;
 }
 
-function buildCalendarLink(lead: LeadItem): string {
-  const followUpDate = new Date((lead.sentAt ?? Date.now()) + 7 * 24 * 60 * 60 * 1000);
-  const nextDay = new Date(followUpDate.getTime() + 24 * 60 * 60 * 1000);
-  const fmtDay = (d: Date) => d.toISOString().split('T')[0].replace(/-/g, '');
-  const leadUrl = `${window.location.origin}/leads/${lead.leadId}`;
-  const details = [
-    `LeadPilot: ${leadUrl}`,
-    lead.phone ? `Tel: ${lead.phone}` : '',
-    lead.url ? `Web: ${lead.url}` : '',
-  ].filter(Boolean).join('\n');
-  const params = new URLSearchParams({
-    action: 'TEMPLATE',
-    text: `Seguimiento — ${lead.businessName}`,
-    dates: `${fmtDay(followUpDate)}/${fmtDay(nextDay)}`,
-    details,
-  });
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
-
 export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   const [emailSubject, setEmailSubject] = useState(lead.emailSubject ?? '');
   const [emailBody, setEmailBody]       = useState(lead.emailBody ?? '');
@@ -435,26 +416,16 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
         </section>
       )}
 
-      {/* Calendario + teléfono */}
-      <section className="border rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-semibold text-gray-700">Seguimiento</h3>
-        <div className="flex items-center gap-3 flex-wrap">
-          <a
-            href={buildCalendarLink(lead)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700"
-          >
-            Abrir en Google Calendar
-          </a>
-          {lead.phone && (
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-700 font-mono">{lead.phone}</span>
-              <CopyButton text={lead.phone} label="Copiar tel." />
-            </div>
-          )}
-        </div>
-      </section>
+      {/* Teléfono */}
+      {lead.phone && (
+        <section className="border rounded-lg p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700">Seguimiento</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-700 font-mono">{lead.phone}</span>
+            <CopyButton text={lead.phone} label="Copiar tel." />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

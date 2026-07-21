@@ -1,7 +1,8 @@
 // EventBridge cron (rate 1 day) — reemplaza a no-response-checker. Empuja leads sin
-// respuesta a través de FOLLOWUP_1 -> FOLLOWUP_2 -> NO_RESPONSE, enviando un email de
-// seguimiento en los dos primeros saltos. Cualquier clic/llamada/respuesta manual saca al
-// lead de la query (deja de estar en el status que este cron consulta) y detiene la cadena.
+// respuesta a través de FOLLOWUP_1 -> FOLLOWUP_2 -> ARCHIVED (sin respuesta tras el 2do
+// seguimiento), enviando un email de seguimiento en los dos primeros saltos. Cualquier
+// clic/respuesta manual saca al lead de la query (deja de estar en el status que este
+// cron consulta) y detiene la cadena.
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -34,7 +35,7 @@ const THRESHOLDS: Array<{
 }> = [
   { fromStatus: 'SENT', toStatus: 'FOLLOWUP_1', afterMs: 7 * DAY, followupNumber: 1 },
   { fromStatus: 'FOLLOWUP_1', toStatus: 'FOLLOWUP_2', afterMs: 14 * DAY, followupNumber: 2 },
-  { fromStatus: 'FOLLOWUP_2', toStatus: 'NO_RESPONSE', afterMs: 28 * DAY },
+  { fromStatus: 'FOLLOWUP_2', toStatus: 'ARCHIVED', afterMs: 28 * DAY },
 ];
 
 let anthropicClient: Anthropic | null = null;
@@ -84,39 +85,19 @@ export const handler = async (): Promise<void> => {
   let sent = 0;
   let skippedByCapCount = 0;
 
-  // Leads en ANALYZED cuyo auto-envío (desde generate-report) nunca salió porque el freno
-  // diario ya estaba gastado en ese momento — sin esto se quedarían atascados para siempre.
-  // Sin umbral de antigüedad, son elegibles desde ya.
-  const stuckLeads = (await queryAllByStatus('ANALYZED')).filter(
-    (lead) => lead.reportHtmlS3Key && lead.emailSubject && lead.emailBody
-  );
-  const sendDeps = {
-    ddb, ses, ssm,
-    leadsTable: TABLE,
-    countersTable: COUNTERS_TABLE,
-    fromEmail: FROM_EMAIL,
-    dailyCapParam: process.env.SHARED_DAILY_CAP_PARAM!,
-  };
-  for (const lead of stuckLeads) {
-    const outcome = await sendLeadEmail(sendDeps, lead, { checkCap: true });
-    if (outcome.ok) {
-      sentToday++; sent++; advanced++;
-    } else if (outcome.reason === 'cap-exhausted') {
-      skippedByCapCount++;
-    }
-    // unsubscribed/no-recipients/send-error: sendLeadEmail ya registró el motivo cuando aplica
-    // (send-error), el lead se queda en ANALYZED y se reintenta en la próxima corrida.
-  }
-
+  // Los seguimientos de día 7/14/28 van primero — tienen fecha comprometida. El backlog de
+  // leads ANALYZED sin enviar (más abajo) no tiene deadline, así que usa lo que sobra del
+  // freno diario. Antes era al revés y un backlog grande dejaba los seguimientos pospuestos
+  // indefinidamente, aunque ya hubieran cumplido su plazo.
   for (const threshold of THRESHOLDS) {
     const candidates = (await queryAllByStatus(threshold.fromStatus)).filter(
       (lead) => lead.sentAt && (now - lead.sentAt) > threshold.afterMs
     );
 
     for (const lead of candidates) {
-      // Sin envío (umbral final -> NO_RESPONSE): solo transición, no consume el freno diario.
+      // Sin envío (umbral final -> ARCHIVED): solo transición, no consume el freno diario.
       if (!threshold.followupNumber) {
-        const timelineEvent: TimelineEvent = { at: now, event: 'NO_RESPONSE', by: 'system' };
+        const timelineEvent: TimelineEvent = { at: now, event: 'ARCHIVED_NO_RESPONSE', by: 'system' };
         try {
           await ddb.send(new UpdateCommand({
             TableName: TABLE,
@@ -228,6 +209,31 @@ export const handler = async (): Promise<void> => {
         // el email ya salió (SES no se puede "deshacer"), pero no pisamos su estado real.
       }
     }
+  }
+
+  // Leads en ANALYZED cuyo auto-envío (desde generate-report) nunca salió porque el freno
+  // diario ya estaba gastado en ese momento — sin esto se quedarían atascados para siempre.
+  // Sin umbral de antigüedad, son elegibles desde ya. Corre después de los seguimientos para
+  // no robarles cupo (ver comentario arriba).
+  const stuckLeads = (await queryAllByStatus('ANALYZED')).filter(
+    (lead) => lead.reportHtmlS3Key && lead.emailSubject && lead.emailBody
+  );
+  const sendDeps = {
+    ddb, ses, ssm,
+    leadsTable: TABLE,
+    countersTable: COUNTERS_TABLE,
+    fromEmail: FROM_EMAIL,
+    dailyCapParam: process.env.SHARED_DAILY_CAP_PARAM!,
+  };
+  for (const lead of stuckLeads) {
+    const outcome = await sendLeadEmail(sendDeps, lead, { checkCap: true });
+    if (outcome.ok) {
+      sentToday++; sent++; advanced++;
+    } else if (outcome.reason === 'cap-exhausted') {
+      skippedByCapCount++;
+    }
+    // unsubscribed/no-recipients/send-error: sendLeadEmail ya registró el motivo cuando aplica
+    // (send-error), el lead se queda en ANALYZED y se reintenta en la próxima corrida.
   }
 
   console.log(`followup-sequencer: ${advanced} leads avanzados, ${sent} emails enviados, ${skippedByCapCount} saltados por freno diario`);

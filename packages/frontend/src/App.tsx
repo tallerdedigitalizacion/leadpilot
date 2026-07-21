@@ -7,14 +7,8 @@ import ScrapeLeads from './pages/ScrapeLeads';
 import type { LeadStatus } from './types/lead';
 
 const NAV_STATUSES: { label: string; status: LeadStatus }[] = [
-  { label: 'Revisando',      status: 'REVIEWING' },
-  { label: 'Calificados',    status: 'QUALIFIED' },
   { label: 'Analizados',     status: 'ANALYZED' },
   { label: 'Enviados',       status: 'SENT' },
-  { label: 'Llamados',       status: 'CALLED' },
-  { label: 'Respondidos',    status: 'RESPONDED' },
-  { label: 'Sin respuesta',  status: 'NO_RESPONSE' },
-  { label: 'Cerrados',       status: 'CLOSED' },
   { label: 'Archivados',     status: 'ARCHIVED' },
 ];
 
@@ -27,7 +21,7 @@ function Nav() {
       {NAV_STATUSES.map(({ label, status }) => (
         <NavLink
           key={status}
-          to={`/?status=${status}`}
+          to={`/leads?status=${status}`}
           className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
             current === status
               ? 'bg-white text-brand'
@@ -54,16 +48,6 @@ function Nav() {
       >
         Scraper Maps
       </NavLink>
-      <NavLink
-        to="/dashboard"
-        className={({ isActive }) =>
-          `ml-1 px-3 py-1 rounded text-sm font-medium transition-colors ${
-            isActive ? 'bg-white text-brand' : 'text-white/80 hover:bg-white/20'
-          }`
-        }
-      >
-        Dashboard
-      </NavLink>
     </nav>
   );
 }
@@ -73,17 +57,17 @@ export default function App() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-brand text-white shadow-md">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <span className="text-xl font-bold tracking-tight">LeadPilot</span>
+          <Link to="/" className="text-xl font-bold tracking-tight">LeadPilot</Link>
           <Nav />
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         <Routes>
-          <Route path="/" element={<LeadList />} />
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/leads" element={<LeadList />} />
           <Route path="/leads/new" element={<AddLead />} />
           <Route path="/leads/:leadId" element={<LeadDetail />} />
-          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/scrape" element={<ScrapeLeads />} />
         </Routes>
       </main>

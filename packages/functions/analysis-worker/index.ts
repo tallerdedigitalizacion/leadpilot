@@ -69,7 +69,10 @@ async function runScreenshotTask(): Promise<string> {
 }
 
 async function waitForPublicIp(taskArn: string): Promise<string> {
-  const deadline = Date.now() + 60_000;
+  // La imagen del screenshot-service creció (~730MB, con sharp) y a veces tarda más de
+  // 60s en arrancar en frío en Fargate — margen ampliado para no matar la tarea a mitad
+  // del pull de la imagen.
+  const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     const result = await ecs.send(new DescribeTasksCommand({ cluster: CLUSTER_ARN, tasks: [taskArn] }));
     const task = result.tasks?.[0];
@@ -93,7 +96,7 @@ async function waitForPublicIp(taskArn: string): Promise<string> {
 
 async function requestScreenshot(publicIp: string, url: string, leadId: string): Promise<{ s3Key: string; cookieDetected: boolean; cookieTool?: string }> {
   const token = await getScreenshotToken();
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + 65_000;
   let lastError: unknown;
   while (Date.now() < deadline) {
     try {
@@ -101,7 +104,7 @@ async function requestScreenshot(publicIp: string, url: string, leadId: string):
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify({ url, leadId }),
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(60000), // sitios con fuentes/JS lentos pueden tardar más de 25s en cargar
       });
       if (!res.ok) throw new Error(`screenshot-service respondió ${res.status}: ${await res.text().catch(() => '')}`);
       return await res.json();

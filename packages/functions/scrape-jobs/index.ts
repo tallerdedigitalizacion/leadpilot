@@ -25,7 +25,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     return respond(403, { error: 'Forbidden' });
   }
 
-  let body: { query?: string; city?: string; extractEmails?: boolean };
+  let body: { query?: string; city?: string; extractEmails?: boolean; provider?: string };
   try {
     body = JSON.parse(event.body ?? '{}');
   } catch {
@@ -41,6 +41,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const job: ScrapeJob = {
     jobId,
     status: 'PENDING',
+    provider: body.provider === 'serpapi' ? 'serpapi' : 'gosom',
     query: body.query,
     city: body.city,
     extractEmails: body.extractEmails ?? false,

@@ -2,13 +2,14 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
+import SponsoredBadge from '../components/SponsoredBadge';
 import Timeline from '../components/Timeline';
 import AnalysisPanel from '../components/AnalysisPanel';
 import ResourcesPanel from '../components/ResourcesPanel';
 import type { LeadItem } from '../types/lead';
 
-const RESOURCES_STATUSES = new Set(['ANALYZED', 'SENT', 'ENGAGED', 'BOOKED', 'FOLLOWUP_1', 'FOLLOWUP_2', 'CALLED', 'RESPONDED', 'NO_RESPONSE', 'CLOSED']);
-const ACTIVE_STATUSES    = new Set(['REVIEWING', 'QUALIFIED', 'ANALYZED', 'SENT', 'ENGAGED', 'BOOKED', 'FOLLOWUP_1', 'FOLLOWUP_2', 'CALLED', 'RESPONDED', 'NO_RESPONSE', 'CLOSED']);
+const RESOURCES_STATUSES = new Set(['ANALYZED', 'SENT', 'ENGAGED', 'BOOKED', 'FOLLOWUP_1', 'FOLLOWUP_2']);
+const ACTIVE_STATUSES    = new Set(['QUALIFIED', 'ANALYZED', 'SENT', 'ENGAGED', 'BOOKED', 'FOLLOWUP_1', 'FOLLOWUP_2']);
 
 export default function LeadDetail() {
   const { leadId } = useParams<{ leadId: string }>();
@@ -17,7 +18,6 @@ export default function LeadDetail() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [note, setNote]             = useState('');
   const [myNotes, setMyNotes]       = useState('');
   const [notesSaved, setNotesSaved] = useState(false);
   const [newEmail, setNewEmail]     = useState('');
@@ -65,20 +65,6 @@ export default function LeadDetail() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [isAutoPipelineRunning, lead?.leadId]);
 
-  const handleAction = async (action: string, status: LeadItem['status'], withNote = false) => {
-    if (!lead) return;
-    setActionLoading(action);
-    try {
-      const updated = await api.updateStatus(lead.leadId, status, withNote ? note : undefined);
-      setLead(updated);
-      setNote('');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   const handleArchive = async () => {
     if (!lead) return;
     setActionLoading('archive');
@@ -98,7 +84,7 @@ export default function LeadDetail() {
     setActionLoading('delete');
     try {
       await api.deleteLead(lead.leadId);
-      navigate('/');
+      navigate('/leads');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error eliminando el lead');
       setActionLoading(null);
@@ -142,7 +128,7 @@ export default function LeadDetail() {
     <div className="space-y-5">
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to={`/?status=${lead.status}`} className="hover:text-brand">← Volver</Link>
+        <Link to={`/leads?status=${lead.status}`} className="hover:text-brand">← Volver</Link>
         <span>/</span>
         <span className="text-gray-800">{lead.businessName}</span>
       </div>
@@ -162,6 +148,7 @@ export default function LeadDetail() {
             </a>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {lead.sponsored && <SponsoredBadge />}
             <StatusBadge status={lead.status} />
             {canArchive && (
               <button
@@ -245,38 +232,6 @@ export default function LeadDetail() {
       </div>
 
       {/* Acciones manuales */}
-      {lead.status === 'REVIEWING' && (
-        <div className="bg-white border rounded-lg p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">Calificar</h2>
-          <div>
-            <label className="text-xs text-gray-500 mb-1 block">Nota (opcional)</label>
-            <input
-              type="text"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Motivo o contexto…"
-              className="w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleAction('qualify', 'QUALIFIED', true)}
-              disabled={actionLoading === 'qualify'}
-              className="px-4 py-2 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light disabled:opacity-50"
-            >
-              {actionLoading === 'qualify' ? 'Calificando…' : 'Calificar'}
-            </button>
-            <button
-              onClick={() => handleAction('discard', 'DISCARDED', true)}
-              disabled={actionLoading === 'discard'}
-              className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded hover:bg-gray-200 disabled:opacity-50"
-            >
-              {actionLoading === 'discard' ? '…' : 'Descartar'}
-            </button>
-          </div>
-        </div>
-      )}
-
       {lead.status === 'QUALIFIED' && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
           <div className="animate-spin w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full shrink-0" />
@@ -286,7 +241,7 @@ export default function LeadDetail() {
         </div>
       )}
 
-      {(lead.status === 'SENT' || lead.status === 'ENGAGED' || lead.status === 'BOOKED' || lead.status === 'FOLLOWUP_1' || lead.status === 'FOLLOWUP_2' || lead.status === 'CALLED' || lead.status === 'RESPONDED') && (
+      {(lead.status === 'SENT' || lead.status === 'ENGAGED' || lead.status === 'BOOKED' || lead.status === 'FOLLOWUP_1' || lead.status === 'FOLLOWUP_2') && (
         <div className="bg-white border rounded-lg p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-3">Seguimiento</h2>
           {lead.status === 'ENGAGED' && (
@@ -315,35 +270,6 @@ export default function LeadDetail() {
               {lead.bookingCancelledAt && <span className="text-red-600 font-medium"> — cancelada</span>}
             </p>
           )}
-          <div className="flex gap-2 flex-wrap">
-            {(lead.status === 'SENT' || lead.status === 'ENGAGED' || lead.status === 'BOOKED' || lead.status === 'FOLLOWUP_1' || lead.status === 'FOLLOWUP_2') && (
-              <button
-                onClick={() => handleAction('called', 'CALLED')}
-                disabled={actionLoading === 'called'}
-                className="px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded hover:bg-teal-700 disabled:opacity-50"
-              >
-                Registrar llamada
-              </button>
-            )}
-            {(lead.status === 'SENT' || lead.status === 'ENGAGED' || lead.status === 'BOOKED' || lead.status === 'FOLLOWUP_1' || lead.status === 'FOLLOWUP_2' || lead.status === 'CALLED') && (
-              <button
-                onClick={() => handleAction('responded', 'RESPONDED')}
-                disabled={actionLoading === 'responded'}
-                className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 disabled:opacity-50"
-              >
-                Respondió
-              </button>
-            )}
-            {(lead.status === 'BOOKED' || lead.status === 'CALLED' || lead.status === 'RESPONDED') && (
-              <button
-                onClick={() => handleAction('closed', 'CLOSED')}
-                disabled={actionLoading === 'closed'}
-                className="px-4 py-2 bg-emerald-700 text-white text-sm font-medium rounded hover:bg-emerald-800 disabled:opacity-50"
-              >
-                ✓ Cerrar deal
-              </button>
-            )}
-          </div>
         </div>
       )}
 
@@ -376,14 +302,12 @@ export default function LeadDetail() {
       )}
 
       {/* Análisis técnico */}
-      {(lead.status !== 'REVIEWING') && (
-        <div className="bg-white border rounded-lg p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Análisis técnico</h2>
-          <AnalysisPanel lead={lead} onLeadUpdate={setLead} />
-        </div>
-      )}
+      <div className="bg-white border rounded-lg p-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Análisis técnico</h2>
+        <AnalysisPanel lead={lead} onLeadUpdate={setLead} />
+      </div>
 
-      {/* Recursos (email, PDF, LinkedIn, calendario) */}
+      {/* Recursos (email, PDF, LinkedIn) */}
       {RESOURCES_STATUSES.has(lead.status) && (
         <div className="bg-white border rounded-lg p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-4">Recursos</h2>

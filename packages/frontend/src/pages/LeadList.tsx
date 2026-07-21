@@ -6,7 +6,7 @@ import type { LeadItem, LeadStatus } from '../types/lead';
 
 export default function LeadList() {
   const [searchParams] = useSearchParams();
-  const status = (searchParams.get('status') ?? 'REVIEWING') as LeadStatus;
+  const status = (searchParams.get('status') ?? 'ANALYZED') as LeadStatus;
 
   const [leads, setLeads] = useState<LeadItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | undefined>();

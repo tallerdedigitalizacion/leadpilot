@@ -36,6 +36,12 @@ export class LeadPilotStack extends cdk.Stack {
       targets: [new targets.LambdaFunction(api.followupSequencerFn)],
     });
 
+    // EventBridge rule: alimenta el funnel solo, una búsqueda ciudad+rubro al azar por día
+    new events.Rule(this, 'AutoScrapeSchedulerRule', {
+      schedule: events.Schedule.rate(cdk.Duration.days(1)),
+      targets: [new targets.LambdaFunction(api.autoScrapeSchedulerFn)],
+    });
+
     // Outputs
     new cdk.CfnOutput(this, 'ApiUrl', {
       value: api.httpApi.apiEndpoint,

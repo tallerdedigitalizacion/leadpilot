@@ -5,7 +5,6 @@ const GOAL = 100;
 const LS_KEY = 'leadpilot_challenge_start';
 
 const PIPELINE = [
-  { label: 'Revisando',     key: 'REVIEWING',   color: '#94a3b8' },
   { label: 'Calificados',   key: 'QUALIFIED',   color: '#eab308' },
   { label: 'Analizados',    key: 'ANALYZED',    color: '#3b82f6' },
   { label: 'Enviados',      key: 'SENT',        color: '#6366f1' },
@@ -13,10 +12,6 @@ const PIPELINE = [
   { label: 'Agendados',     key: 'BOOKED',      color: '#7c3aed' },
   { label: 'Seguimiento 1', key: 'FOLLOWUP_1',  color: '#f59e0b' },
   { label: 'Seguimiento 2', key: 'FOLLOWUP_2',  color: '#ea580c' },
-  { label: 'Llamados',      key: 'CALLED',      color: '#0d9488' },
-  { label: 'Respondidos',   key: 'RESPONDED',   color: '#22c55e' },
-  { label: 'Sin respuesta', key: 'NO_RESPONSE', color: '#f97316' },
-  { label: 'Cerrados',      key: 'CLOSED',      color: '#059669' },
 ];
 
 function fmt(d: Date) {
@@ -59,9 +54,7 @@ export default function Dashboard() {
   );
 
   // ── Métricas clave ──────────────────────────────────────────────────────────
-  const sentTotal   = (counts.SENT ?? 0) + (counts.ENGAGED ?? 0) + (counts.BOOKED ?? 0) + (counts.FOLLOWUP_1 ?? 0) + (counts.FOLLOWUP_2 ?? 0) + (counts.CALLED ?? 0) + (counts.RESPONDED ?? 0) + (counts.NO_RESPONSE ?? 0) + (counts.CLOSED ?? 0);
-  const calledTotal = (counts.CALLED ?? 0) + (counts.RESPONDED ?? 0) + (counts.CLOSED ?? 0);
-  const closedTotal = counts.CLOSED ?? 0;
+  const sentTotal   = (counts.SENT ?? 0) + (counts.ENGAGED ?? 0) + (counts.BOOKED ?? 0) + (counts.FOLLOWUP_1 ?? 0) + (counts.FOLLOWUP_2 ?? 0);
   const activeTotal = Object.entries(counts)
     .filter(([s]) => s !== 'ARCHIVED' && s !== 'DISCARDED')
     .reduce((a, [, v]) => a + v, 0);
@@ -75,9 +68,6 @@ export default function Dashboard() {
   const remaining = GOAL - sentTotal;
   const daysToGoal = rate > 0 && remaining > 0 ? Math.ceil(remaining / rate) : null;
   const projectedDate = daysToGoal != null ? new Date(Date.now() + daysToGoal * 24 * 60 * 60 * 1000) : null;
-
-  const convCall  = sentTotal > 0 ? Math.round((calledTotal / sentTotal) * 100) : 0;
-  const convClose = sentTotal > 0 ? Math.round((closedTotal / sentTotal) * 100) : 0;
 
   // Barra pipeline: anchura relativa al mayor valor
   const maxCount = Math.max(...PIPELINE.map((r) => counts[r.key] ?? 0), 1);
@@ -146,13 +136,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── 4 métricas clave ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-3">
+      {/* ── Métricas clave ───────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3">
         {[
           { label: 'Total leads', value: activeTotal, color: 'text-gray-700' },
           { label: 'Enviados',    value: sentTotal,   color: 'text-indigo-600' },
-          { label: 'Llamados',    value: calledTotal, color: 'text-teal-600' },
-          { label: 'Cerrados',    value: closedTotal, color: 'text-emerald-600' },
         ].map((m) => (
           <div key={m.label} className="bg-white border rounded-lg p-4 text-center">
             <div className={`text-3xl font-bold ${m.color}`}>{m.value}</div>
@@ -182,22 +170,6 @@ export default function Dashboard() {
             );
           })}
         </div>
-
-        {/* Tasas de conversión */}
-        {sentTotal > 0 && (
-          <div className="mt-5 pt-4 border-t grid grid-cols-2 gap-4 text-sm">
-            <div>
-              <span className="text-gray-400 text-xs block mb-0.5">Tasa llamada</span>
-              <span className="font-semibold text-gray-800">{convCall}%</span>
-              <span className="text-gray-400 text-xs ml-1">({calledTotal}/{sentTotal})</span>
-            </div>
-            <div>
-              <span className="text-gray-400 text-xs block mb-0.5">Tasa cierre</span>
-              <span className="font-semibold text-gray-800">{convClose}%</span>
-              <span className="text-gray-400 text-xs ml-1">({closedTotal}/{sentTotal})</span>
-            </div>
-          </div>
-        )}
       </div>
 
     </div>

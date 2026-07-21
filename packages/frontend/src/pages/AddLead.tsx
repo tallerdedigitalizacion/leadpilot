@@ -63,7 +63,7 @@ export default function AddLead() {
       // El backend (ingest-leads) ya auto-califica y dispara el análisis — no hace falta
       // un segundo viaje para calificar manualmente.
       const newId = result.ids[0];
-      navigate(newId ? `/leads/${newId}` : '/');
+      navigate(newId ? `/leads/${newId}` : '/leads');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al guardar');
       setLoading(false);
@@ -73,7 +73,7 @@ export default function AddLead() {
   return (
     <div className="max-w-xl mx-auto space-y-5">
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/" className="hover:text-brand">← Volver</Link>
+        <Link to="/leads" className="hover:text-brand">← Volver</Link>
         <span>/</span>
         <span className="text-gray-800">Añadir lead</span>
       </div>
@@ -118,7 +118,7 @@ export default function AddLead() {
               {loading ? 'Guardando…' : 'Guardar lead'}
             </button>
             <Link
-              to="/"
+              to="/leads"
               className="px-4 py-2 text-sm text-gray-600 border rounded hover:bg-gray-50"
             >
               Cancelar

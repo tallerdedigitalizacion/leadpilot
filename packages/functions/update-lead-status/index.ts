@@ -21,18 +21,13 @@ function respond(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
 const TERMINAL: LeadStatus[] = ['ARCHIVED', 'DISCARDED'];
 
 const VALID_TRANSITIONS: Partial<Record<LeadStatus, LeadStatus[]>> = {
-  REVIEWING:   ['QUALIFIED', 'DISCARDED', 'ARCHIVED'],
   QUALIFIED:   ['ARCHIVED'],
   ANALYZED:    ['SENT', 'ARCHIVED'],
-  SENT:        ['ENGAGED', 'BOOKED', 'CALLED', 'RESPONDED', 'FOLLOWUP_1', 'ARCHIVED'],
-  ENGAGED:     ['BOOKED', 'CALLED', 'RESPONDED', 'ARCHIVED'],
-  BOOKED:      ['CALLED', 'RESPONDED', 'CLOSED', 'ARCHIVED'],
-  FOLLOWUP_1:  ['ENGAGED', 'BOOKED', 'CALLED', 'RESPONDED', 'FOLLOWUP_2', 'ARCHIVED'],
-  FOLLOWUP_2:  ['ENGAGED', 'BOOKED', 'CALLED', 'RESPONDED', 'NO_RESPONSE', 'ARCHIVED'],
-  CALLED:      ['BOOKED', 'RESPONDED', 'CLOSED', 'ARCHIVED'],
-  NO_RESPONSE: ['ARCHIVED'],
-  RESPONDED:   ['CLOSED', 'ARCHIVED'],
-  CLOSED:      ['ARCHIVED'],
+  SENT:        ['ENGAGED', 'BOOKED', 'FOLLOWUP_1', 'ARCHIVED'],
+  ENGAGED:     ['BOOKED', 'ARCHIVED'],
+  BOOKED:      ['ARCHIVED'],
+  FOLLOWUP_1:  ['ENGAGED', 'BOOKED', 'FOLLOWUP_2', 'ARCHIVED'],
+  FOLLOWUP_2:  ['ENGAGED', 'BOOKED', 'ARCHIVED'],
 };
 
 export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {

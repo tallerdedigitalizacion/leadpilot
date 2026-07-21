@@ -52,7 +52,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const now = Date.now();
   const clickEvent: TimelineEvent = { at: now, event: 'LINK_CLICKED', by: 'system' };
 
-  // Always record the click, regardless of current status — history survives past ENGAGED/CALLED/etc.
+  // Always record the click, regardless of current status — history survives past ENGAGED/BOOKED/etc.
   await ddb.send(new UpdateCommand({
     TableName: TABLE,
     Key: { leadId },
@@ -61,7 +61,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   }));
 
   // Solo pasa a ENGAGED si el lead sigue "esperando respuesta" (SENT o en la secuencia de
-  // seguimiento). Si ya avanzó (CALLED/RESPONDED/BOOKED/etc.), lo dejamos como está.
+  // seguimiento). Si ya avanzó (BOOKED/etc.), lo dejamos como está.
   const engagedEvent: TimelineEvent = { at: now, event: 'ENGAGED', by: 'system' };
   try {
     await ddb.send(new UpdateCommand({

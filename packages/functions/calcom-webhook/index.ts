@@ -9,7 +9,7 @@ const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOption
 const ssm = new SSMClient({});
 const TABLE = process.env.LEADS_TABLE_NAME!;
 
-const BOOKABLE_FROM: LeadStatus[] = ['SENT', 'ENGAGED', 'FOLLOWUP_1', 'FOLLOWUP_2', 'CALLED'];
+const BOOKABLE_FROM: LeadStatus[] = ['SENT', 'ENGAGED', 'FOLLOWUP_1', 'FOLLOWUP_2'];
 
 let webhookSecret: string | null = null;
 

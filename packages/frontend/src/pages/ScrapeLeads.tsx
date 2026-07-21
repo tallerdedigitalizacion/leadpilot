@@ -6,6 +6,7 @@ import type { ScrapeJob } from '../types/lead';
 export default function ScrapeLeads() {
   const [query, setQuery] = useState('');
   const [city, setCity] = useState('');
+  const [provider, setProvider] = useState<'gosom' | 'serpapi'>('gosom');
   const [extractEmails, setExtractEmails] = useState(false);
   const [job, setJob] = useState<ScrapeJob | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,10 +43,12 @@ export default function ScrapeLeads() {
         query: query.trim(),
         city: city.trim(),
         extractEmails,
+        provider,
       });
       setJob({
         jobId,
         status: 'PENDING',
+        provider,
         query: query.trim(),
         city: city.trim(),
         extractEmails,
@@ -62,6 +65,7 @@ export default function ScrapeLeads() {
     setJob(null);
     setQuery('');
     setCity('');
+    setProvider('gosom');
     setExtractEmails(false);
     setError(null);
   };
@@ -69,7 +73,7 @@ export default function ScrapeLeads() {
   return (
     <div className="max-w-xl mx-auto space-y-5">
       <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link to="/" className="hover:text-brand">← Volver</Link>
+        <Link to="/leads" className="hover:text-brand">← Volver</Link>
         <span>/</span>
         <span className="text-gray-800">Scraper de Google Maps</span>
       </div>
@@ -102,6 +106,17 @@ export default function ScrapeLeads() {
               onChange={(e) => setCity(e.target.value)}
               placeholder="Dallas, TX"
             />
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Proveedor</label>
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as 'gosom' | 'serpapi')}
+                className="w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+              >
+                <option value="gosom">Google Maps Scraper (propio)</option>
+                <option value="serpapi">SerpApi (solo patrocinados)</option>
+              </select>
+            </div>
             <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
               <input
                 type="checkbox"
@@ -119,7 +134,7 @@ export default function ScrapeLeads() {
               >
                 {submitting ? 'Iniciando…' : 'Buscar leads'}
               </button>
-              <Link to="/" className="px-4 py-2 text-sm text-gray-600 border rounded hover:bg-gray-50">
+              <Link to="/leads" className="px-4 py-2 text-sm text-gray-600 border rounded hover:bg-gray-50">
                 Cancelar
               </Link>
             </div>
@@ -176,7 +191,7 @@ function JobStatus({ job, onReset }: { job: ScrapeJob; onReset: () => void }) {
       </div>
       <div className="flex gap-3">
         <Link
-          to="/?status=QUALIFIED"
+          to="/leads?status=QUALIFIED"
           className="px-4 py-2 bg-brand text-white text-sm font-medium rounded hover:bg-brand-light"
         >
           Ver leads calificados →

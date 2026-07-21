@@ -24,7 +24,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   if (!result.Item) return respond(404, { error: 'Lead not found' });
 
   const { status } = result.Item as { status: string };
-  const ALLOWED = new Set(['QUALIFIED', 'ANALYZED', 'SENT', 'CALLED', 'RESPONDED', 'NO_RESPONSE']);
+  const ALLOWED = new Set(['QUALIFIED', 'ANALYZED', 'SENT']);
   if (!ALLOWED.has(status)) {
     return respond(400, { error: `Cannot retry analysis for status: ${status}` });
   }

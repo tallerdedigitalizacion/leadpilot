@@ -1,0 +1,139 @@
+# TODO — Backlog de LeadPilot
+
+> Archivo de referencia interna. Claude lo lee al empezar sesiones nuevas para mantener
+> el hilo del backlog entre conversaciones. Actualizar aquí en vez de solo mencionar
+> pendientes en el chat.
+
+## Pendiente
+
+### 1. Volver a exigir solo patrocinados (revertir el filtro relajado)
+Contexto: el 2026-07-05 se relajó a propósito el filtro de `serpapi-provider.ts` para
+generar volumen mientras Pablo estaba de vacaciones (ver sección "Decisiones temporales"
+abajo). Sigue pendiente decidir:
+- Si gosom ya está arreglado (ver ítem #1 de "Bugs externos pendientes"): usarlo como
+  fuente principal, ya filtra mejor por naturaleza (aunque tampoco distingue patrocinado
+  de orgánico — ver nota).
+- Si se sigue con SerpApi: en [`packages/functions/scrape-worker/serpapi-provider.ts`](packages/functions/scrape-worker/serpapi-provider.ts),
+  quitar la rama que ingiere `local_results.places` (orgánicos) y volver a exigir
+  únicamente `local_ads.ads` (patrocinados, `sponsored: true`).
+- Nota importante: **ninguno de los 2 scrapers expone "patrocinado" como propiedad simple
+  del objeto de Google Maps** — gosom no distingue en absoluto; SerpApi solo lo distingue
+  vía `local_ads.ads` del motor `google` (no `google_maps`), y ni así es perfecto (el
+  anuncio no trae el sitio web propio, hay que cruzarlo por nombre contra `local_results`,
+  y frecuentemente no hay coincidencia). Si se quiere una señal de calidad más confiable
+  a futuro, evaluar alternativas (ver sugerencias técnicas al final).
+
+## Completado (2026-07-21)
+
+Estos 4 puntos, pedidos junto con el ítem 1 de arriba, ya están implementados y
+desplegados (a propósito se dejó pendiente solo el ítem 1, sponsored-only, a pedido
+explícito de Pablo):
+
+- **Categorías del pipeline manual eliminadas**: se quitaron `REVIEWING`, `CALLED`,
+  `RESPONDED`, `NO_RESPONSE`, `CLOSED` de `LeadStatus` (en `shared/types.ts` y
+  `frontend/types/lead.ts`), del nav (`App.tsx`), de `StatusBadge.tsx`, de
+  `VALID_TRANSITIONS` (`update-lead-status/index.ts`), y de los `ALLOWED` sets en
+  `trigger-analysis`/`trigger-report`. `QUALIFIED` y `DISCARDED` se mantuvieron en el
+  enum (son estados internos reales del pipeline / tienen 1 lead histórico), simplemente
+  ya no tienen UI manual asociada — el gate manual "Calificar/Descartar" en
+  `LeadDetail.tsx` (ligado a `REVIEWING`, que nunca se alcanza porque `ingest-leads`
+  auto-califica todo) se eliminó por ser dead code.
+  `followup-sequencer`'s umbral final (`FOLLOWUP_2` sin respuesta tras 28 días) ahora
+  transiciona a `ARCHIVED` en vez de a `NO_RESPONSE` (que ya no existe).
+- **Dashboard como página principal**: `/` → `Dashboard`, la lista de leads se movió a
+  `/leads`. Todos los links internos actualizados (`LeadCard`, `LeadDetail`, `AddLead`,
+  `ScrapeLeads`).
+- **Seguimiento por llamada eliminado**: botones "Registrar llamada", "Respondió",
+  "✓ Cerrar deal" fuera de `LeadDetail.tsx`. El seguimiento automático por email
+  (`FOLLOWUP_1`/`FOLLOWUP_2`, `followup-sequencer`) no se tocó — es un sistema distinto.
+- **Link de Google Calendar eliminado**: `generateCalendarLink()` (`generate-report/index.ts`)
+  y `buildCalendarLink()` (`ResourcesPanel.tsx`) removidas, junto con el campo
+  `calendarLink` del tipo `LeadItem`. La reserva real por Cal.com (`calcom-webhook`,
+  estado `BOOKED`) no se tocó — son sistemas distintos, solo se quitó el recordatorio
+  manual secundario.
+
+Verificado en producción (build + deploy limpios, sin errores de tipos, probado en
+el navegador contra el sitio real): nav muestra solo Analizados/Enviados/Archivados,
+ficha de lead sin botones de llamada ni link de calendario, dashboard es la home.
+
+## Resuelto (2026-07-21)
+
+**Corte de crédito de Anthropic (15–21 de julio)**: Pablo recargó saldo y activó recarga
+automática. Se forzó manualmente (`POST /leads/{id}/report`) la generación de los 6
+leads reales que habían quedado atascados en `ANALYZED` durante el corte (Sundial
+Locksmith, All Fence Co, All Degrees HVAC, Skyline Pressure Washing, Albuquerque Fence
+Company, Mechanical Technologies) — los 6 generaron reporte, enviaron email y publicaron
+LinkedIn correctamente. El cron diario debería seguir funcionando solo de acá en más.
+
+**Gosom**: confirmado arreglado upstream (`v1.16.2`/`v1.16.3`, PR "Fix playwright driver
+install 404 error", sube `playwright-go` a `v0.6000.0`). Ver "Bugs externos" abajo —
+ya no es un bloqueante técnico para volver a usarlo, queda como decisión de producto.
+
+**Nota aparte, sin resolver**: hay un lote de ~17 leads viejos ("dentist" en Austin, del
+2026-07-02) atascados en `ANALYZED` con reporte ya generado pero **sin ningún email
+capturado** (`email` y `emails` vacíos) — no es el mismo problema, no se pueden forzar
+porque no hay a quién enviarles nada. `sendLeadEmail` los descarta silenciosamente
+(`no-recipients`, sin loguear nada al timeline). Si se quieren rescatar, hay que
+añadirles un email a mano (botón "+ Añadir" en la ficha del lead) antes de poder
+reintentar el envío.
+
+## Decisiones temporales (revertir o revisar)
+
+- **`/leadpilot/scrape-provider` = `serpapi`** (SSM). Gosom está roto por un bug externo
+  (ver abajo) — cuando se arregle, decidir si se vuelve a gosom o se queda en SerpApi
+  permanentemente.
+- **Filtro relajado en SerpApi** (orgánicos + patrocinados, no solo patrocinados) — ver
+  ítem 1 arriba. Como contraparte: los leads orgánicos son más fríos que los
+  patrocinados (no hay señal de "está invirtiendo en su presencia digital"), así que la
+  tasa de respuesta probablemente sea menor mientras este filtro siga relajado — normal,
+  no es una regresión.
+
+## Bugs externos pendientes (no dependen de nosotros)
+
+1. **Gosom — el bug original ya está arreglado, pero apareció uno nuevo, más grave, el
+   2026-07-21.**
+   - El bug original (driver `1.57.0` eliminado del CDN) sí lo arreglaron: `v1.16.2`
+     (13/7) sube `playwright-community/playwright-go` a `v0.6000.0` (driver `1.60.0`)
+     correctamente. Pero **`v1.16.2` no tiene imagen publicada en Docker Hub** (solo el
+     tag de git) — no se puede usar directamente.
+   - `v1.16.3` (la única imagen disponible además de versiones viejas) **introduce una
+     regresión propia**: su Dockerfile pre-instala el driver vía un paquete distinto
+     (`mxschmitt/playwright-go@v0.6100.0`, driver `1.61.1`) en `/opt/ms-playwright-go`,
+     pero el binario de la app en realidad usa `playwright-community/playwright-go@v0.6000.0`
+     (driver `1.60.0`) — mismatch real, error en runtime: `"driver exists but version
+     not 1.60.0"`. Ya se pinneó la imagen a `v1.16.3` y se agregó un override de
+     `PLAYWRIGHT_DRIVER_PATH` en [`scraping.ts`](packages/infra/lib/constructs/scraping.ts)
+     para forzar una descarga limpia en vez de usar el driver mal instalado — esta parte
+     del fix es correcta y quedó desplegada.
+   - **Pero al forzar esa descarga limpia (2026-07-21), la propia CDN de Microsoft
+     (`playwright.azureedge.net`) devolvió 404 para TODAS las versiones probadas
+     (1.58.x–1.64.x), no solo la vieja `1.57.0`.** El dominio ahora redirige (307) a
+     `playwright.download.prss.microsoft.com/dbazure/download/playwright/`, un sistema
+     de distribución distinto que devuelve 400/404 con errores tipo
+     `GatewayServiceFileDetails Response is not in success state` — parece una migración
+     de infraestructura de Microsoft en curso, no algo que dependa de gosom ni de
+     nosotros. **Conclusión: gosom sigue sin poder usarse hoy, por una razón nueva y
+     totalmente fuera de nuestro control.** La config actual (`v1.16.3` +
+     `PLAYWRIGHT_DRIVER_PATH` override) es la correcta — si el CDN de Microsoft se
+     estabiliza, debería empezar a funcionar sin tocar nada más. Revisar de nuevo más
+     adelante probando `curl -I https://playwright.azureedge.net/builds/driver/playwright-1.61.1-linux.zip`.
+   - `/leadpilot/scrape-provider` se dejó en `serpapi` (la única opción que funciona hoy).
+
+## Sugerencias técnicas (no pedidas explícitamente, para evaluar)
+
+- **Monitorear reputación de envío en SES** mientras el filtro esté relajado (leads más
+  fríos = probablemente más rebotes/quejas). Si sube la tasa de bounce, vale la pena
+  cortar antes de que afecte la entregabilidad general del dominio. SES en sí está sano
+  (producción activa en `eu-west-1`, dominio e email verificados, 50k/día de cupo).
+- **Cuota de SerpApi**: quedan ~200 de 250 búsquedas del plan free (al 2026-07-21). El
+  cron diario gasta 1 por corrida — a este ritmo alcanza de sobra, pero si se corre el
+  scraper manualmente muchas veces conviene vigilarlo.
+- **Registro de coincidencia patrocinado↔sitio** (`findWebsiteByName` en
+  `serpapi-provider.ts`) es una heurística por solapamiento de palabras, no un ID estable.
+  Funciona pero es aproximada — si en el futuro se vuelve crítico (ítem 1), documentar
+  mejor sus falsos negativos conocidos (ads que no matchean por diferencias grandes de
+  naming) en vez de asumir que todo ad sin match es "sin sitio real".
+- **Test jobs/leads sueltos**: durante la verificación de sesiones anteriores se crearon
+  varios registros de prueba en `leadpilot-scrape-jobs` (jobIds de test, algunos FAILED
+  por bugs ya arreglados). No afectan el funcionamiento pero se pueden limpiar si
+  molestan en el dashboard de jobs.

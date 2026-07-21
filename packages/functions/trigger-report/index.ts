@@ -8,7 +8,7 @@ const lambdaClient = new LambdaClient({});
 const TABLE = process.env.LEADS_TABLE_NAME!;
 const GENERATE_REPORT_FN = process.env.GENERATE_REPORT_FUNCTION_NAME!;
 
-const ALLOWED_STATUSES = new Set(['ANALYZED', 'SENT', 'CALLED', 'RESPONDED', 'NO_RESPONSE']);
+const ALLOWED_STATUSES = new Set(['ANALYZED', 'SENT']);
 
 function respond(statusCode: number, body: unknown): APIGatewayProxyResultV2 {
   return {

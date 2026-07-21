@@ -1,5 +1,4 @@
 export type LeadStatus =
-  | 'REVIEWING'
   | 'DISCARDED'
   | 'ARCHIVED'
   | 'QUALIFIED'
@@ -8,11 +7,7 @@ export type LeadStatus =
   | 'ENGAGED'
   | 'BOOKED'
   | 'FOLLOWUP_1'
-  | 'FOLLOWUP_2'
-  | 'CALLED'
-  | 'RESPONDED'
-  | 'NO_RESPONSE'
-  | 'CLOSED';
+  | 'FOLLOWUP_2';
 
 export interface PageSpeedScore {
   performance: number;
@@ -47,10 +42,12 @@ export interface WebAnalysis {
 }
 
 export type ScrapeJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
+export type ScrapeProvider = 'gosom' | 'serpapi';
 
 export interface ScrapeJob {
   jobId: string;
   status: ScrapeJobStatus;
+  provider: ScrapeProvider;
   query: string;
   city: string;
   extractEmails: boolean;
@@ -72,6 +69,7 @@ export interface LeadItem {
   emails?: string[];
   city?: string;
   category?: string;
+  sponsored?: boolean;
   createdAt: number;
   qualifiedAt?: number;
   analyzedAt?: number;
@@ -104,8 +102,6 @@ export interface LeadItem {
   emailSubject?: string;
   emailBody?: string;
   linkedinPost?: string;
-  calendarLink?: string;
   followUpNotes?: string;
-  respondedAt?: number;
   timeline: TimelineEvent[];
 }

@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import StatusBadge from './StatusBadge';
+import SponsoredBadge from './SponsoredBadge';
 import type { LeadItem } from '../types/lead';
 
 export default function LeadCard({ lead }: { lead: LeadItem }) {
@@ -23,7 +24,10 @@ export default function LeadCard({ lead }: { lead: LeadItem }) {
             {lead.url}
           </a>
         </div>
-        <StatusBadge status={lead.status} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          {lead.sponsored && <SponsoredBadge />}
+          <StatusBadge status={lead.status} />
+        </div>
       </div>
 
       <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">

@@ -1,5 +1,5 @@
 {
-  "name": "@leadpilot/fn-scrape-worker",
+  "name": "@leadpilot/fn-auto-scrape-scheduler",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -8,13 +8,13 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.600.0",
     "@aws-sdk/lib-dynamodb": "^3.600.0",
-    "@aws-sdk/client-ecs": "^3.600.0",
-    "@aws-sdk/client-ec2": "^3.600.0",
+    "@aws-sdk/client-lambda": "^3.600.0",
     "@aws-sdk/client-ssm": "^3.600.0",
-    "csv-parse": "^5.5.6"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.140",
+    "@types/uuid": "^9.0.8",
     "esbuild": "^0.21.0",
     "typescript": "^5.4.0"
   }

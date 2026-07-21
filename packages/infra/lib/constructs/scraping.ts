@@ -112,9 +112,23 @@ export class Scraping extends Construct {
     });
 
     this.mapsScraperTaskDef.addContainer('scraper', {
-      image: ecs.ContainerImage.fromRegistry('gosom/google-maps-scraper:v1.16.0'),
+      // v1.16.3: incluye el fix upstream del driver de Playwright (PR "Fix playwright
+      // driver install 404 error" — sube playwright-go a v0.6000.0, driver 1.60.0, que
+      // sí existe en el CDN de Microsoft). v1.14.0/v1.16.0 quedaron rotas por ese bug —
+      // ver TODO.md para el historial completo.
+      image: ecs.ContainerImage.fromRegistry('gosom/google-maps-scraper:v1.16.3'),
       portMappings: [{ containerPort: 8080 }],
       command: ['-data-folder', '/gmapsdata'],
+      // El Dockerfile de v1.16.3 pre-instala el driver de Playwright vía el paquete
+      // mxschmitt/playwright-go@v0.6100.0 (driver 1.61.1) en /opt/ms-playwright-go, pero
+      // el binario de la app usa playwright-community/playwright-go@v0.6000.0 (driver
+      // 1.60.0) — versiones distintas, mismatch real de la imagen. Se sobreescribe
+      // PLAYWRIGHT_DRIVER_PATH a una ruta vacía para forzar una descarga limpia de la
+      // versión correcta (1.60.0, confirmada disponible en el CDN) en vez de usar el
+      // driver mal instalado que trae la imagen.
+      environment: {
+        PLAYWRIGHT_DRIVER_PATH: '/tmp/playwright-driver-fresh',
+      },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'maps-scraper', logRetention: cdk.aws_logs.RetentionDays.ONE_WEEK }),
     });
   }

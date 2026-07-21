@@ -49,26 +49,6 @@ function shortId(leadId: string): string {
   return leadId.replace(/-/g, '').slice(0, 6).toUpperCase();
 }
 
-function generateCalendarLink(lead: LeadItem): string {
-  const followUpDate = new Date((lead.sentAt ?? Date.now()) + 7 * 24 * 60 * 60 * 1000);
-  // All-day event: YYYYMMDD format, end = next day
-  const fmtDay = (d: Date) => d.toISOString().split('T')[0].replace(/-/g, '');
-  const endDate = new Date(followUpDate.getTime() + 24 * 60 * 60 * 1000);
-  const frontendUrl = process.env.FRONTEND_URL ?? '';
-  const details = [
-    frontendUrl ? `LeadPilot: ${frontendUrl}/leads/${lead.leadId}` : '',
-    lead.phone ? `Tel: ${lead.phone}` : '',
-    lead.url ? `Web: ${lead.url}` : '',
-  ].filter(Boolean).join('\n');
-  const params = new URLSearchParams({
-    action: 'TEMPLATE',
-    text: `Seguimiento — ${lead.businessName}`,
-    dates: `${fmtDay(followUpDate)}/${fmtDay(endDate)}`,
-    details,
-  });
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
-
 // ── 1. HTML REPORT ────────────────────────────────────────────────────────────
 
 function serializeWebAnalysis(lead: LeadItem): string {
@@ -396,7 +376,6 @@ export const handler = async (event: { leadId: string }): Promise<void> => {
     ]);
 
     const now = Date.now();
-    const calendarLink = generateCalendarLink(lead);
     const timelineEvent: TimelineEvent = { at: now, event: 'REPORT_GENERATED', by: 'system' };
 
     await ddb.send(new UpdateCommand({
@@ -408,7 +387,6 @@ export const handler = async (event: { leadId: string }): Promise<void> => {
         emailSubject = :emailSubject,
         emailBody = :emailBody,
         linkedinPost = :linkedinPost,
-        calendarLink = :calendarLink,
         isGeneratingReport = :false,
         timeline = list_append(timeline, :event)`,
       ExpressionAttributeValues: {
@@ -417,7 +395,6 @@ export const handler = async (event: { leadId: string }): Promise<void> => {
         ':emailSubject': emailData.subject,
         ':emailBody': emailData.body,
         ':linkedinPost': linkedinPost,
-        ':calendarLink': calendarLink,
         ':false': false,
         ':event': [timelineEvent],
       },

@@ -25,6 +25,7 @@ interface ApiProps {
 export class Api extends Construct {
   public readonly httpApi: apigwv2.HttpApi;
   public readonly followupSequencerFn: nodejs.NodejsFunction;
+  public readonly autoScrapeSchedulerFn: nodejs.NodejsFunction;
 
   constructor(scope: Construct, id: string, props: ApiProps) {
     super(scope, id);
@@ -73,6 +74,18 @@ export class Api extends Construct {
     // Page de LinkedIn ya conectada, sin flujo de OAuth.
     const bufferApiKeyParam = ssm.StringParameter.fromSecureStringParameterAttributes(
       this, 'BufferApiKeyParam', { parameterName: '/leadpilot/buffer-api-key' }
+    );
+
+    // API key personal de SerpApi (serpapi.com/manage-api-key) — motor google_maps, plan free.
+    const serpApiKeyParam = ssm.StringParameter.fromSecureStringParameterAttributes(
+      this, 'SerpApiKeyParam', { parameterName: '/leadpilot/serpapi-key' }
+    );
+
+    // Selector de proveedor para el cron automático (gosom | serpapi) — String param (no
+    // Secure) para poder cambiarlo sin redeploy. Sin setear, el scheduler usa 'gosom' por
+    // default (ver auto-scrape-scheduler) para no arrancar a gastar cupo pago por accidente.
+    const scrapeProviderParamRef = ssm.StringParameter.fromStringParameterName(
+      this, 'ScrapeProviderParamRef', '/leadpilot/scrape-provider'
     );
 
     const commonEnv = {
@@ -478,10 +491,12 @@ export class Api extends Construct {
         SCRAPER_SECURITY_GROUP_ID: scraping.mapsScraperTaskSg.securityGroupId,
         API_BASE_URL: this.httpApi.apiEndpoint,
         INGEST_API_KEY: props.ingestApiKey,
+        SERPAPI_KEY_PARAM: '/leadpilot/serpapi-key',
       },
     });
     scrapeJobsTable.grantReadWriteData(scrapeWorkerFn);
     scraping.mapsScraperTaskDef.grantRun(scrapeWorkerFn);
+    serpApiKeyParam.grantRead(scrapeWorkerFn);
     scrapeWorkerFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ecs:DescribeTasks', 'ecs:StopTask'],
@@ -509,6 +524,23 @@ export class Api extends Construct {
     });
     scrapeJobsTable.grantReadWriteData(scrapeJobsFn);
     scrapeWorkerFn.grantInvoke(scrapeJobsFn);
+
+    // ── auto-scrape-scheduler (cron diario — elige ciudad+rubro al azar y dispara un scrape,
+    //    para que el funnel se siga alimentando solo sin que Pablo abra /scrape a mano) ─────
+    this.autoScrapeSchedulerFn = new nodejs.NodejsFunction(this, 'AutoScrapeScheduler', {
+      ...commonProps,
+      functionName: 'leadpilot-auto-scrape-scheduler',
+      entry: fnEntry('auto-scrape-scheduler'),
+      handler: 'handler',
+      environment: {
+        SCRAPE_JOBS_TABLE_NAME: scrapeJobsTable.tableName,
+        SCRAPE_WORKER_FUNCTION_NAME: scrapeWorkerFn.functionName,
+        SCRAPE_PROVIDER_PARAM: '/leadpilot/scrape-provider',
+      },
+    });
+    scrapeJobsTable.grantReadWriteData(this.autoScrapeSchedulerFn);
+    scrapeProviderParamRef.grantRead(this.autoScrapeSchedulerFn);
+    scrapeWorkerFn.grantInvoke(this.autoScrapeSchedulerFn);
 
     // ── get-scrape-job (GET /scrape-jobs/{jobId} — para el polling del frontend) ─────
     const getScrapeJobFn = new nodejs.NodejsFunction(this, 'GetScrapeJob', {
