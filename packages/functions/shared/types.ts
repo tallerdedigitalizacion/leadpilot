@@ -85,6 +85,7 @@ export interface LeadItem {
   bookingCancelledAt?: number;
   followup1SentAt?: number;
   followup2SentAt?: number;
+  engagedFollowupSentAt?: number;
   pagespeedMobile?: PageSpeedScore;
   pagespeedDesktop?: PageSpeedScore;
   pagespeedMobileRaw?: string;

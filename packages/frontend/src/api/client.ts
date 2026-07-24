@@ -51,16 +51,19 @@ export const api = {
     });
   },
 
-  // Botón de prueba manual — dispara el seguimiento 1 o 2 al instante, sin esperar 7/14 días.
+  // Botón de prueba manual — dispara el seguimiento 1, 2, o el personalizado post-click
+  // ('engaged') al instante, sin esperar 5/7/14 días reales.
   async simulateFollowup(
     leadId: string,
-    followupNumber: 1 | 2
+    followupNumber: 1 | 2 | 'engaged'
   ): Promise<{ ok: boolean; error?: string; lead?: LeadItem }> {
     try {
       const res = await fetch(`${BASE_URL}/leads/${leadId}/simulate-followup`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-api-key': API_KEY },
-        body: JSON.stringify({ followupNumber }),
+        body: JSON.stringify(
+          followupNumber === 'engaged' ? { branch: 'engaged' } : { followupNumber }
+        ),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) return { ok: false, error: data?.error ?? `${res.status} ${res.statusText}` };

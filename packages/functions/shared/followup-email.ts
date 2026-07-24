@@ -76,3 +76,82 @@ ${reportHtml.slice(0, 30000)}`;
     .replace(/__UNSUBSCRIBE_URL__/g, unsubscribeUrl);
   return { subject, body };
 }
+
+// Rama A del seguimiento condicional: el lead ya hizo click en el reporte (está
+// ENGAGED). En vez del recordatorio genérico de arriba, referencia un hallazgo concreto
+// del análisis — prioriza datos numéricos (tiempo de carga) sobre texto genérico, para
+// que el email no termine sonando a "¿viste mi email anterior?".
+export function pickEngagedFinding(lead: LeadItem): string {
+  const speedIndex = lead.pagespeedMobile?.speedIndex;
+  if (speedIndex) return `un tiempo de carga de ${speedIndex.toFixed(1)}s en la versión mobile de la home`;
+
+  const lcp = lead.pagespeedMobile?.lcp;
+  if (lcp) return `un Largest Contentful Paint de ${lcp.toFixed(1)}s en mobile`;
+
+  const cwvIssue = lead.webAnalysis?.performanceSummary.coreWebVitalsIssues[0];
+  if (cwvIssue) return cwvIssue;
+
+  const topFix = lead.webAnalysis?.top3Fixes[0];
+  if (topFix) return topFix;
+
+  return lead.webAnalysis?.headlinePain ?? 'el problema principal identificado en el reporte';
+}
+
+export async function generateEngagedFollowupEmail(
+  client: Anthropic,
+  reportHtml: string,
+  headlineFinding: string,
+  businessName: string,
+  trackingUrl: string,
+  unsubscribeUrl: string,
+  bookingUrl: string,
+  canSpamAddress: string,
+): Promise<{ subject: string; body: string }> {
+  const prompt = `Se te va a proporcionar el reporte del prospecto como archivo HTML. Ya se le envió un email inicial con este mismo reporte y esta vez SÍ entró a verlo (hizo clic en el link del reporte) — a diferencia de un seguimiento genérico, acá sabemos que ya lo revisó.
+
+Genera un email de seguimiento CORTO, tono 1:1 y personal — como si le escribieras a alguien que sabés que ya vio tu trabajo, no un recordatorio genérico. Referenciá que ya revisó el informe de "${businessName}" y preguntá directamente sobre este hallazgo concreto (parafraseálo en una frase natural, no lo copies literal): ${headlineFinding}.
+
+El asunto en la primera línea como texto plano. El cuerpo en HTML puro con estilos inline, sin <style> ni clases.
+
+Formato exacto:
+
+Subject: [breve, personal, deja claro que sabés que vio el reporte]
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Hi,</p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">[1-2 frases: notaste que revisó el reporte, preguntá sobre el hallazgo específico de arriba, ofrecé explicar el impacto en conversión/negocio si le sirve. Tono curioso, no de venta.]</p>
+
+<div style="margin:0 0 16px;">
+[exactamente 1 caja con este formato, retomando el mismo hallazgo:
+${SIGNAL_BOX_FORMAT}
+]
+</div>
+
+${emailFooterFormat({ bookingUrl, canSpamAddress })}
+
+REGLAS:
+- Exactamente 1 caja de problema — el hallazgo específico de arriba, no otro
+- No inventes datos que no estén en el reporte o en el hallazgo dado
+- Sin introducción ni explicación. Solo el email listo para enviar
+- Todo con estilos inline exactamente como en el formato
+
+---
+REPORTE HTML:
+${reportHtml.slice(0, 30000)}`;
+
+  const message = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const block = message.content[0];
+  const text = block.type === 'text' ? block.text : '';
+  const subjectMatch = text.match(/^Subject:\s*(.+)/m);
+  const subject = subjectMatch ? subjectMatch[1].trim() : '';
+  const rawBody = text.replace(/^Subject:.*\n?/, '').trim();
+  const body = rawBody
+    .replace(/__REPORT_URL__/g, trackingUrl)
+    .replace(/__UNSUBSCRIBE_URL__/g, unsubscribeUrl);
+  return { subject, body };
+}
