@@ -9,6 +9,8 @@ import type { LeadStatus } from './types/lead';
 const NAV_STATUSES: { label: string; status: LeadStatus }[] = [
   { label: 'Analizados',     status: 'ANALYZED' },
   { label: 'Enviados',       status: 'SENT' },
+  { label: 'Interesados',    status: 'ENGAGED' },
+  { label: 'Agendados',      status: 'BOOKED' },
   { label: 'Archivados',     status: 'ARCHIVED' },
 ];
 
