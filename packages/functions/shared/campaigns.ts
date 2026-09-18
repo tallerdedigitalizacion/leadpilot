@@ -97,8 +97,11 @@ const ES_SPRINT: CampaignConfig = {
   provider: 'serpapi',
   locale: { gl: 'es', hl: 'es', googleDomain: 'google.es', serpApiCountry: 'Spain' },
   fromEmail: 'info@tallerdedigitalizacion.com',
-  // TODO: este evento todavía no existe en Cal.com — crearlo antes de poner active: true.
-  bookingUrl: 'https://cal.com/taller-de-digitalizacion/20min',
+  // PROVISIONAL: apunta al evento en inglés, que es el único que existe hoy. Antes de poner
+  // active: true hay que crear el evento en español en Cal.com y cambiarlo aquí — un email
+  // en español que aterriza en una página en inglés titulada "website speed call" rompe la
+  // promesa justo en el clic. (El slug /20min que había antes devolvía 404.)
+  bookingUrl: 'https://cal.com/taller-de-digitalizacion/free-15-min-website-speed-call',
   dailySendCap: 5,
   cities: [
     'Madrid', 'Barcelona', 'Valencia', 'Sevilla', 'Zaragoza', 'Málaga', 'Murcia',
