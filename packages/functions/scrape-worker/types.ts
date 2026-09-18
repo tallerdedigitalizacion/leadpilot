@@ -8,6 +8,7 @@ export interface ScrapedLead {
   sponsored?: boolean;
   leadSource?: 'maps' | 'serp';
   vertical?: string;
+  campaignId?: string;
 }
 
 export interface ProviderResult {

@@ -13,6 +13,7 @@ import { publishToLinkedin } from '../shared/buffer';
 import { getActivePrompt, renderPrompt } from '../shared/prompt-store';
 import { trackedCompletion } from '../shared/llm-client';
 import { generateEmail, generateLinkedinPost } from '../shared/report-content';
+import { buildBookingUrl, getCampaign } from '../shared/campaigns';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -76,7 +77,7 @@ async function generateReportHtml(client: Anthropic, lead: LeadItem): Promise<st
   const id = shortId(lead.leadId);
   const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-  const { content: template, version } = await getActivePrompt('report-html');
+  const { content: template, version } = await getActivePrompt(getCampaign(lead.campaignId).campaignId, 'report-html');
   const prompt = renderPrompt(template, {
     id,
     date,
@@ -154,14 +155,13 @@ export const handler = async (event: { leadId: string }): Promise<void> => {
     // metadata[leadId] es el mecanismo primario para que el webhook de Cal.com identifique el
     // lead; el email prefilled es un respaldo (el prefill de email/nombre es una función estable
     // de Cal.com, a diferencia del metadata en query params que tiene reportes de bugs)
-    const bookingParams = new URLSearchParams({ 'metadata[leadId]': leadId });
-    if (lead.email) bookingParams.set('email', lead.email);
-    const bookingUrl = `https://cal.com/taller-de-digitalizacion/30min?${bookingParams.toString()}`;
+    const campaignId = getCampaign(lead.campaignId).campaignId;
+    const bookingUrl = buildBookingUrl(lead);
 
     // Generar email y LinkedIn en paralelo
     const [emailData, linkedinPost] = await Promise.all([
-      generateEmail(client, leadId, reportHtml, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS),
-      generateLinkedinPost(client, leadId, reportHtml),
+      generateEmail(client, leadId, campaignId, reportHtml, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS),
+      generateLinkedinPost(client, leadId, campaignId, reportHtml),
     ]);
 
     const now = Date.now();

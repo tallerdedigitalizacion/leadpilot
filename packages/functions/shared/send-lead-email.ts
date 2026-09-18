@@ -2,6 +2,7 @@ import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import type { LeadItem, LeadStatus, TimelineEvent } from './types';
+import { getCampaign } from './campaigns';
 
 export interface SendDeps {
   ddb: DynamoDBDocumentClient;
@@ -31,16 +32,41 @@ function todayKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function getSentCountToday(ddb: DynamoDBDocumentClient, countersTable: string): Promise<number> {
-  const result = await ddb.send(new GetCommand({ TableName: countersTable, Key: { date: todayKey() } }));
-  return (result.Item?.sentCount as number) ?? 0;
+// El contador global (sentCount) y el de cada campaña (sentCount#<campaignId>) viven en la
+// misma fila del día. Así una campaña nueva puede arrancar con su propio freno sin dejar de
+// contar contra el tope global, que es el que protege la reputación del dominio en SES.
+function campaignCounterAttr(campaignId: string): string {
+  return `sentCount#${campaignId}`;
 }
 
-export async function incrementSentCountToday(ddb: DynamoDBDocumentClient, countersTable: string): Promise<void> {
+export async function getSentCountToday(
+  ddb: DynamoDBDocumentClient,
+  countersTable: string,
+  campaignId?: string,
+): Promise<number> {
+  const result = await ddb.send(new GetCommand({ TableName: countersTable, Key: { date: todayKey() } }));
+  const attr = campaignId ? campaignCounterAttr(campaignId) : 'sentCount';
+  return (result.Item?.[attr] as number) ?? 0;
+}
+
+export async function incrementSentCountToday(
+  ddb: DynamoDBDocumentClient,
+  countersTable: string,
+  campaignId?: string,
+): Promise<void> {
+  // Los dos contadores se incrementan en la misma operación atómica: si se hicieran en dos
+  // llamadas, un fallo entre medias dejaría los totales desalineados para siempre.
+  const names: Record<string, string> = { '#global': 'sentCount' };
+  const parts = ['#global :one'];
+  if (campaignId) {
+    names['#campaign'] = campaignCounterAttr(campaignId);
+    parts.push('#campaign :one');
+  }
   await ddb.send(new UpdateCommand({
     TableName: countersTable,
     Key: { date: todayKey() },
-    UpdateExpression: 'ADD sentCount :one',
+    UpdateExpression: `ADD ${parts.join(', ')}`,
+    ExpressionAttributeNames: names,
     ExpressionAttributeValues: { ':one': 1 },
   }));
 }
@@ -55,21 +81,31 @@ export async function sendLeadEmail(
 ): Promise<SendOutcome> {
   if (lead.unsubscribed) return { ok: false, reason: 'unsubscribed' };
 
+  const campaign = getCampaign(lead.campaignId);
+
   if (opts.checkCap) {
     const cap = await getSharedDailyCap(deps.ssm, deps.dailyCapParam);
     const sentToday = await getSentCountToday(deps.ddb, deps.countersTable);
     if (sentToday >= cap) return { ok: false, reason: 'cap-exhausted' };
+
+    if (campaign.dailySendCap !== undefined) {
+      const sentForCampaign = await getSentCountToday(deps.ddb, deps.countersTable, campaign.campaignId);
+      if (sentForCampaign >= campaign.dailySendCap) return { ok: false, reason: 'cap-exhausted' };
+    }
   }
 
   const toAddresses = [...new Set([...(lead.emails ?? []), ...(lead.email ? [lead.email] : [])])];
   if (toAddresses.length === 0) return { ok: false, reason: 'no-recipients' };
 
   const now = Date.now();
+  // deps.fromEmail (SES_FROM_EMAIL) queda como respaldo: la dirección tiene que estar
+  // verificada en SES, y la de la campaña puede no estarlo si se añadió hace un momento.
+  const fromEmail = campaign.fromEmail || deps.fromEmail;
   let messageId: string | undefined;
   try {
     const sesResult = await deps.ses.send(new SendEmailCommand({
-      Source: deps.fromEmail,
-      Destination: { ToAddresses: toAddresses, BccAddresses: [deps.fromEmail] },
+      Source: fromEmail,
+      Destination: { ToAddresses: toAddresses, BccAddresses: [fromEmail] },
       Message: {
         Subject: { Data: lead.emailSubject!, Charset: 'UTF-8' },
         Body: { Html: { Data: lead.emailBody!, Charset: 'UTF-8' } },
@@ -105,6 +141,6 @@ export async function sendLeadEmail(
     if (err?.name !== 'ConditionalCheckFailedException') throw err;
   }
 
-  if (opts.checkCap) await incrementSentCountToday(deps.ddb, deps.countersTable);
+  if (opts.checkCap) await incrementSentCountToday(deps.ddb, deps.countersTable, campaign.campaignId);
   return { ok: true, messageId };
 }

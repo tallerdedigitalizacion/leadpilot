@@ -12,6 +12,7 @@ import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import Anthropic from '@anthropic-ai/sdk';
 import type { LeadItem, LeadStatus, TimelineEvent } from '../shared/types';
 import { buildLinks, generateFollowupEmail, pickEngagedFinding, generateEngagedFollowupEmail } from '../shared/followup-email';
+import { getCampaign } from '../shared/campaigns';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -74,7 +75,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const client = new Anthropic({ apiKey: anthropicParam.Parameter!.Value! });
   const { trackingUrl, unsubscribeUrl, bookingUrl } = buildLinks(lead, TRACKING_BASE_URL, FRONTEND_URL, trackingSecretParam.Parameter!.Value!);
 
-  const emailData = await generateFollowupEmail(client, lead.leadId, reportHtml, followupNumber, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
+  const emailData = await generateFollowupEmail(client, lead.leadId, getCampaign(lead.campaignId).campaignId, reportHtml, followupNumber, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
 
   const now = Date.now();
   try {
@@ -151,7 +152,7 @@ async function simulateEngagedFollowup(leadId: string): Promise<APIGatewayProxyR
   const { trackingUrl, unsubscribeUrl, bookingUrl } = buildLinks(lead, TRACKING_BASE_URL, FRONTEND_URL, trackingSecretParam.Parameter!.Value!);
 
   const finding = pickEngagedFinding(lead);
-  const emailData = await generateEngagedFollowupEmail(client, lead.leadId, reportHtml, finding, lead.businessName, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
+  const emailData = await generateEngagedFollowupEmail(client, lead.leadId, getCampaign(lead.campaignId).campaignId, reportHtml, finding, lead.businessName, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
 
   const now = Date.now();
   try {

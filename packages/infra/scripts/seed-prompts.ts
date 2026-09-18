@@ -10,6 +10,8 @@ import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand } from '@aws-s
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({ region: 'us-east-1' }));
 const TABLE = process.argv.find((a) => a.startsWith('--table='))?.split('=')[1] ?? 'leadpilot-prompts';
 const FORCE = process.argv.includes('--force');
+// --campaign=es-sprint para sembrar una sola campaña sin tocar las demás.
+const ONLY_CAMPAIGN = process.argv.find((a) => a.startsWith('--campaign='))?.split('=')[1];
 
 interface PromptSeed {
   promptId: string;
@@ -312,27 +314,33 @@ REGLAS:
 REPORTE HTML:
 {{reportHtml}}`;
 
-const PROMPTS: PromptSeed[] = [
-  { promptId: 'vision-analysis', content: VISION_USER_TEMPLATE, systemPrompt: VISION_SYSTEM_PROMPT },
-  { promptId: 'report-html', content: REPORT_HTML_TEMPLATE },
-  { promptId: 'cold-email', content: COLD_EMAIL_TEMPLATE },
-  { promptId: 'linkedin-post', content: LINKEDIN_POST_TEMPLATE },
-  { promptId: 'followup-email', content: FOLLOWUP_EMAIL_TEMPLATE },
-  { promptId: 'engaged-followup-email', content: ENGAGED_FOLLOWUP_EMAIL_TEMPLATE },
-];
+// Las claves reales en DynamoDB son `${campaignId}/${promptId}` — cada campaña tiene su
+// propio juego de prompts (ver shared/prompt-store.ts y shared/campaigns.ts). Estos seis son
+// los de la campaña original; los de es-sprint se añaden cuando exista su copy.
+const CAMPAIGN_PROMPTS: Record<string, PromptSeed[]> = {
+  'us-webaudit': [
+    { promptId: 'vision-analysis', content: VISION_USER_TEMPLATE, systemPrompt: VISION_SYSTEM_PROMPT },
+    { promptId: 'report-html', content: REPORT_HTML_TEMPLATE },
+    { promptId: 'cold-email', content: COLD_EMAIL_TEMPLATE },
+    { promptId: 'linkedin-post', content: LINKEDIN_POST_TEMPLATE },
+    { promptId: 'followup-email', content: FOLLOWUP_EMAIL_TEMPLATE },
+    { promptId: 'engaged-followup-email', content: ENGAGED_FOLLOWUP_EMAIL_TEMPLATE },
+  ],
+};
 
-async function seedPrompt(seed: PromptSeed): Promise<void> {
+async function seedPrompt(campaignId: string, seed: PromptSeed): Promise<void> {
+  const key = `${campaignId}/${seed.promptId}`;
   if (!FORCE) {
-    const existing = await ddb.send(new GetCommand({ TableName: TABLE, Key: { promptId: seed.promptId, version: 'ACTIVE' } }));
+    const existing = await ddb.send(new GetCommand({ TableName: TABLE, Key: { promptId: key, version: 'ACTIVE' } }));
     if (existing.Item) {
-      console.log(`skip: "${seed.promptId}" ya tiene una versión ACTIVE (usar --force para re-seedear)`);
+      console.log(`skip: "${key}" ya tiene una versión ACTIVE (usar --force para re-seedear)`);
       return;
     }
   }
 
   const now = Date.now();
   const versionItem = {
-    promptId: seed.promptId,
+    promptId: key,
     version: '000001',
     versionNumber: 1,
     content: seed.content,
@@ -342,7 +350,7 @@ async function seedPrompt(seed: PromptSeed): Promise<void> {
     notes: 'Versión inicial — migrada desde el código hardcodeado',
   };
   const activeItem = {
-    promptId: seed.promptId,
+    promptId: key,
     version: 'ACTIVE',
     activeVersion: 1,
     content: seed.content,
@@ -356,13 +364,20 @@ async function seedPrompt(seed: PromptSeed): Promise<void> {
       { Put: { TableName: TABLE, Item: activeItem } },
     ],
   }));
-  console.log(`ok: "${seed.promptId}" sembrado — versión 1, ACTIVE`);
+  console.log(`ok: "${key}" sembrado — versión 1, ACTIVE`);
 }
 
 async function main() {
-  console.log(`Sembrando ${PROMPTS.length} prompts en la tabla "${TABLE}"${FORCE ? ' (--force)' : ''}...`);
-  for (const seed of PROMPTS) {
-    await seedPrompt(seed);
+  const entries = Object.entries(CAMPAIGN_PROMPTS).filter(([c]) => !ONLY_CAMPAIGN || c === ONLY_CAMPAIGN);
+  if (ONLY_CAMPAIGN && entries.length === 0) {
+    throw new Error(`no hay prompts definidos para la campaña "${ONLY_CAMPAIGN}"`);
+  }
+  const total = entries.reduce((n, [, seeds]) => n + seeds.length, 0);
+  console.log(`Sembrando ${total} prompts en la tabla "${TABLE}"${FORCE ? ' (--force)' : ''}...`);
+  for (const [campaignId, seeds] of entries) {
+    for (const seed of seeds) {
+      await seedPrompt(campaignId, seed);
+    }
   }
   console.log('Listo.');
 }

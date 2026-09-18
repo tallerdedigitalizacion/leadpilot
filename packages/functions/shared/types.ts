@@ -48,6 +48,7 @@ export interface ScrapeJob {
   jobId: string;
   status: ScrapeJobStatus;
   provider: ScrapeProvider;
+  campaignId?: string;
   query: string;
   city: string;
   extractEmails: boolean;
@@ -72,6 +73,8 @@ export interface LeadItem {
   sponsored?: boolean;
   leadSource?: 'maps' | 'serp';
   vertical?: string;
+  // Ausente en los leads anteriores a las campañas — tratar como DEFAULT_CAMPAIGN_ID.
+  campaignId?: string;
   createdAt: number;
   qualifiedAt?: number;
   analyzedAt?: number;

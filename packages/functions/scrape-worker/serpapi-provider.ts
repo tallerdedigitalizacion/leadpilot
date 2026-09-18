@@ -16,6 +16,7 @@ import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import type { ScrapeJob } from '../shared/types';
 import type { ScrapedLead, ProviderResult } from './types';
 import { toSerpApiLocation } from './serpapi-location';
+import { getCampaign } from '../shared/campaigns';
 
 const ssm = new SSMClient({});
 const SERPAPI_KEY_PARAM = process.env.SERPAPI_KEY_PARAM!;
@@ -127,13 +128,14 @@ function mapPlace(place: SerpApiLocalPlace): ScrapedLead | undefined {
 
 export async function runSerpApiScrape(job: ScrapeJob): Promise<ProviderResult> {
   const apiKey = await getSerpApiKey();
+  const { locale } = getCampaign(job.campaignId);
   const params = new URLSearchParams({
     engine: 'google',
     q: job.query,
-    location: toSerpApiLocation(job.city),
-    google_domain: 'google.com',
-    gl: 'us',
-    hl: 'en',
+    location: toSerpApiLocation(job.city, locale.serpApiCountry),
+    google_domain: locale.googleDomain,
+    gl: locale.gl,
+    hl: locale.hl,
     api_key: apiKey,
   });
   const url = `https://serpapi.com/search?${params.toString()}`;

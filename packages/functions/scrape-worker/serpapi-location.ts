@@ -19,8 +19,14 @@ const US_STATE_NAMES: Record<string, string> = {
 // completo del estado ("Fort Worth, Texas"). El scheduler automático usa "Ciudad ST" para
 // sus 50 ciudades — se expande aquí. Si no matchea (ciudad manual, extranjera, o ya en
 // formato completo), se pasa tal cual.
-export function toSerpApiLocation(city: string): string {
-  const match = city.trim().match(/^(.+?)\s+([A-Z]{2})$/);
+// `country` viene del locale de la campaña (shared/campaigns.ts). Solo se aplica si la
+// ciudad no matcheó el formato estadounidense y no trae ya una coma: "Madrid" necesita el
+// país para desambiguar, pero "Madrid, Community of Madrid, Spain" ya está resuelta.
+export function toSerpApiLocation(city: string, country?: string): string {
+  const trimmed = city.trim();
+  const match = trimmed.match(/^(.+?)\s+([A-Z]{2})$/);
   const stateName = match && US_STATE_NAMES[match[2]];
-  return stateName ? `${match[1]}, ${stateName}, United States` : city;
+  if (stateName) return `${match[1]}, ${stateName}, United States`;
+  if (country && !trimmed.includes(',')) return `${trimmed}, ${country}`;
+  return trimmed;
 }

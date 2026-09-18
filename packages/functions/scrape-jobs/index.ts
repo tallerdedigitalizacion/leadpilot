@@ -4,6 +4,7 @@ import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import type { ScrapeJob } from '../shared/types';
+import { getCampaign } from '../shared/campaigns';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const lambdaClient = new LambdaClient({});
@@ -25,7 +26,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     return respond(403, { error: 'Forbidden' });
   }
 
-  let body: { query?: string; city?: string; extractEmails?: boolean; provider?: string };
+  let body: { query?: string; city?: string; extractEmails?: boolean; provider?: string; campaignId?: string };
   try {
     body = JSON.parse(event.body ?? '{}');
   } catch {
@@ -44,6 +45,10 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     provider: body.provider === 'serpapi' ? 'serpapi'
       : body.provider === 'serpapi-web' ? 'serpapi-web'
       : 'gosom',
+    // Un campaignId desconocido cae a la campaña por defecto en vez de dar 400: este
+    // endpoint lo usa el botón manual del frontend, y un job con la campaña equivocada es
+    // preferible a un scrape que no se llega a lanzar.
+    campaignId: getCampaign(body.campaignId).campaignId,
     query: body.query,
     city: body.city,
     extractEmails: body.extractEmails ?? false,

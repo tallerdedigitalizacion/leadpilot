@@ -4,6 +4,7 @@ import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-d
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { v4 as uuidv4 } from 'uuid';
 import type { LeadItem, TimelineEvent } from '../shared/types';
+import { getCampaign } from '../shared/campaigns';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const lambdaClient = new LambdaClient({});
@@ -25,7 +26,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     return respond(403, { error: 'Forbidden' });
   }
 
-  let body: { leads: Array<{ businessName: string; url: string; phone?: string; email?: string; city?: string; category?: string; sponsored?: boolean; leadSource?: 'maps' | 'serp'; vertical?: string }> };
+  let body: { leads: Array<{ businessName: string; url: string; phone?: string; email?: string; city?: string; category?: string; sponsored?: boolean; leadSource?: 'maps' | 'serp'; vertical?: string; campaignId?: string }> };
   try {
     body = JSON.parse(event.body ?? '{}');
   } catch {
@@ -78,6 +79,9 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       sponsored: lead.sponsored,
       leadSource: lead.leadSource,
       vertical: lead.vertical,
+      // Se normaliza al ingerir: así todo lead nuevo lleva campaña explícita y solo los
+      // históricos quedan sin el campo.
+      campaignId: getCampaign(lead.campaignId).campaignId,
       createdAt: now,
       timeline: [ingestedEvent, qualifiedEvent],
     };

@@ -19,12 +19,22 @@ interface CachedPrompt {
 
 const cache = new Map<string, CachedPrompt>();
 
-export async function getActivePrompt(promptId: string): Promise<{ content: string; systemPrompt?: string; version: number }> {
-  const hit = cache.get(promptId);
+// La clave real en DynamoDB es `${campaignId}/${promptId}`: cada campaña tiene su propio
+// juego de prompts, porque el mensaje es justamente lo que cambia entre una oferta y otra.
+// A propósito NO hay fallback a la campaña por defecto cuando falta un prompt — heredarlo
+// en silencio significaría mandarle a un prospecto español el copy en inglés de otra
+// oferta. Es mejor que falle ruidosamente y el lead se quede esperando.
+export function promptKey(campaignId: string, promptId: string): string {
+  return `${campaignId}/${promptId}`;
+}
+
+export async function getActivePrompt(campaignId: string, promptId: string): Promise<{ content: string; systemPrompt?: string; version: number }> {
+  const key = promptKey(campaignId, promptId);
+  const hit = cache.get(key);
   if (hit && Date.now() - hit.cachedAt < TTL_MS) return hit;
 
-  const result = await ddb.send(new GetCommand({ TableName: TABLE, Key: { promptId, version: 'ACTIVE' } }));
-  if (!result.Item) throw new Error(`prompt-store: no se encontró versión ACTIVE para promptId "${promptId}"`);
+  const result = await ddb.send(new GetCommand({ TableName: TABLE, Key: { promptId: key, version: 'ACTIVE' } }));
+  if (!result.Item) throw new Error(`prompt-store: no se encontró versión ACTIVE para "${key}"`);
 
   const entry: CachedPrompt = {
     content: result.Item.content,
@@ -32,7 +42,7 @@ export async function getActivePrompt(promptId: string): Promise<{ content: stri
     version: result.Item.activeVersion,
     cachedAt: Date.now(),
   };
-  cache.set(promptId, entry);
+  cache.set(key, entry);
   return entry;
 }
 

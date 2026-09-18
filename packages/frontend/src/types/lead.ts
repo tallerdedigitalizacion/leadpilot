@@ -72,6 +72,7 @@ export interface LeadItem {
   sponsored?: boolean;
   leadSource?: 'maps' | 'serp';
   vertical?: string;
+  campaignId?: string;
   createdAt: number;
   qualifiedAt?: number;
   analyzedAt?: number;

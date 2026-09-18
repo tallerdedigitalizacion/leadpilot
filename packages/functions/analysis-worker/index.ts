@@ -11,7 +11,8 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import Anthropic from '@anthropic-ai/sdk';
 import type { LeadItem, PageSpeedScore, TimelineEvent, WebAnalysis } from '../shared/types';
 import { fetchPageSpeed } from '../shared/pagespeed';
-import { getActivePrompt, renderPrompt } from '../shared/prompt-store';
+import { getActivePrompt, promptKey, renderPrompt } from '../shared/prompt-store';
+import { getCampaign } from '../shared/campaigns';
 import { trackedCompletion } from '../shared/llm-client';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
@@ -141,7 +142,8 @@ async function runVisionAnalysis(
   cookieDetected: boolean,
   cookieTool: string | undefined,
 ): Promise<WebAnalysis | undefined> {
-  const { content: template, systemPrompt, version } = await getActivePrompt('vision-analysis');
+  const campaignId = getCampaign(lead.campaignId).campaignId;
+  const { content: template, systemPrompt, version } = await getActivePrompt(campaignId, 'vision-analysis');
   const userText = renderPrompt(template, {
     businessName: lead.businessName,
     category: lead.category ?? 'no especificada',
@@ -153,7 +155,7 @@ async function runVisionAnalysis(
   });
 
   const message = await trackedCompletion(client, {
-    promptId: 'vision-analysis',
+    promptId: promptKey(campaignId, 'vision-analysis'),
     promptVersion: version,
     leadId: lead.leadId,
     model: 'claude-sonnet-4-6',

@@ -15,6 +15,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { LeadItem, LeadStatus, TimelineEvent } from '../shared/types';
 import { sendLeadEmail, getSharedDailyCap, getSentCountToday, incrementSentCountToday } from '../shared/send-lead-email';
 import { buildLinks as buildFollowupLinks, generateFollowupEmail, pickEngagedFinding, generateEngagedFollowupEmail } from '../shared/followup-email';
+import { getCampaign } from '../shared/campaigns';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -138,7 +139,7 @@ export const handler = async (): Promise<void> => {
       const client = await getAnthropicClient();
       const { trackingUrl, unsubscribeUrl, bookingUrl } = await buildLinks(lead);
       const finding = pickEngagedFinding(lead);
-      const emailData = await generateEngagedFollowupEmail(client, lead.leadId, reportHtml, finding, lead.businessName, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
+      const emailData = await generateEngagedFollowupEmail(client, lead.leadId, getCampaign(lead.campaignId).campaignId, reportHtml, finding, lead.businessName, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
       subject = emailData.subject;
       body = emailData.body;
 
@@ -260,7 +261,7 @@ export const handler = async (): Promise<void> => {
         const reportHtml = await s3Result.Body?.transformToString() ?? '';
         const client = await getAnthropicClient();
         const { trackingUrl, unsubscribeUrl, bookingUrl } = await buildLinks(lead);
-        const emailData = await generateFollowupEmail(client, lead.leadId, reportHtml, threshold.followupNumber, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
+        const emailData = await generateFollowupEmail(client, lead.leadId, getCampaign(lead.campaignId).campaignId, reportHtml, threshold.followupNumber, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
         subject = emailData.subject;
         body = emailData.body;
 

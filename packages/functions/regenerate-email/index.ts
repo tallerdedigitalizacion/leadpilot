@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { LeadItem } from '../shared/types';
 import { signToken } from '../shared/tracking';
 import { generateEmail, generateLinkedinPost } from '../shared/report-content';
+import { buildBookingUrl, getCampaign } from '../shared/campaigns';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -74,13 +75,12 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const trackingUrl = `${TRACKING_BASE_URL}/r/${leadId}?t=${token}`;
   const unsubscribeUrl = `${FRONTEND_URL}/unsubscribe/${leadId}?t=${token}`;
 
-  const bookingParams = new URLSearchParams({ 'metadata[leadId]': leadId });
-  if (lead.email) bookingParams.set('email', lead.email);
-  const bookingUrl = `https://cal.com/taller-de-digitalizacion/30min?${bookingParams.toString()}`;
+  const campaignId = getCampaign(lead.campaignId).campaignId;
+  const bookingUrl = buildBookingUrl(lead);
 
   const [emailData, linkedinPost] = await Promise.all([
-    generateEmail(client, leadId, reportHtml, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS),
-    generateLinkedinPost(client, leadId, reportHtml),
+    generateEmail(client, leadId, campaignId, reportHtml, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS),
+    generateLinkedinPost(client, leadId, campaignId, reportHtml),
   ]);
 
   const updated = await ddb.send(new UpdateCommand({

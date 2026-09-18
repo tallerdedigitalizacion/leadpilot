@@ -59,7 +59,11 @@ export const handler = async (event: { jobId: string }): Promise<void> => {
       ? await runSerpApiWebScrape(job)
       : await runGosomScrape(job);
 
-    const { created, skipped } = await ingestLeads(providerResult.leads);
+    // Un solo punto para sellar la campaña, en vez de repetirlo en los tres providers:
+    // el job ya sabe de qué campaña es y todos los leads que produce son suyos.
+    const { created, skipped } = await ingestLeads(
+      providerResult.leads.map((lead) => ({ ...lead, campaignId: job.campaignId })),
+    );
 
     await updateJob(jobId, {
       status: 'DONE',

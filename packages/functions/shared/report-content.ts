@@ -6,19 +6,20 @@
 // que ambos Lambdas puedan importarla sin arrastrar el resto del código de uno al otro
 // vía el bundling de esbuild.
 import Anthropic from '@anthropic-ai/sdk';
-import { getActivePrompt, renderPrompt } from './prompt-store';
+import { getActivePrompt, promptKey, renderPrompt } from './prompt-store';
 import { trackedCompletion } from './llm-client';
 
 export async function generateEmail(
   client: Anthropic,
   leadId: string,
+  campaignId: string,
   reportHtml: string,
   trackingUrl: string,
   unsubscribeUrl: string,
   bookingUrl: string,
   canSpamAddress: string,
 ): Promise<{ subject: string; body: string }> {
-  const { content: template, version } = await getActivePrompt('cold-email');
+  const { content: template, version } = await getActivePrompt(campaignId, 'cold-email');
   const prompt = renderPrompt(template, {
     bookingUrl,
     canSpamAddress,
@@ -26,7 +27,7 @@ export async function generateEmail(
   });
 
   const message = await trackedCompletion(client, {
-    promptId: 'cold-email',
+    promptId: promptKey(campaignId, 'cold-email'),
     promptVersion: version,
     leadId,
     model: 'claude-sonnet-4-6',
@@ -48,12 +49,12 @@ export async function generateEmail(
   return { subject, body };
 }
 
-export async function generateLinkedinPost(client: Anthropic, leadId: string, reportHtml: string): Promise<string> {
-  const { content: template, version } = await getActivePrompt('linkedin-post');
+export async function generateLinkedinPost(client: Anthropic, leadId: string, campaignId: string, reportHtml: string): Promise<string> {
+  const { content: template, version } = await getActivePrompt(campaignId, 'linkedin-post');
   const prompt = renderPrompt(template, { reportHtml: reportHtml.slice(0, 30000) });
 
   const message = await trackedCompletion(client, {
-    promptId: 'linkedin-post',
+    promptId: promptKey(campaignId, 'linkedin-post'),
     promptVersion: version,
     leadId,
     model: 'claude-sonnet-4-6',
