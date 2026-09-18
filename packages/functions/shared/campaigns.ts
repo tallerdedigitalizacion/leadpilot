@@ -50,7 +50,9 @@ const US_WEBAUDIT: CampaignConfig = {
   language: 'en',
   locale: { gl: 'us', hl: 'en', googleDomain: 'google.com' },
   fromEmail: 'info@tallerdedigitalizacion.com',
-  bookingUrl: 'https://cal.com/taller-de-digitalizacion/30min',
+  // El evento hecho a medida para esta oferta, en vez del genérico /30min: el título de la
+  // página de reserva coincide con lo que promete el email.
+  bookingUrl: 'https://cal.com/taller-de-digitalizacion/free-15-min-website-speed-call',
   cities: [
     'Austin TX', 'San Antonio TX', 'Fort Worth TX', 'El Paso TX', 'Arlington TX',
     'Nashville TN', 'Memphis TN', 'Knoxville TN', 'Charlotte NC', 'Raleigh NC',
@@ -97,11 +99,13 @@ const ES_SPRINT: CampaignConfig = {
   provider: 'serpapi',
   locale: { gl: 'es', hl: 'es', googleDomain: 'google.es', serpApiCountry: 'Spain' },
   fromEmail: 'info@tallerdedigitalizacion.com',
-  // PROVISIONAL: apunta al evento en inglés, que es el único que existe hoy. Antes de poner
-  // active: true hay que crear el evento en español en Cal.com y cambiarlo aquí — un email
-  // en español que aterriza en una página en inglés titulada "website speed call" rompe la
-  // promesa justo en el clic. (El slug /20min que había antes devolvía 404.)
-  bookingUrl: 'https://cal.com/taller-de-digitalizacion/free-15-min-website-speed-call',
+  // Evento de 20 minutos en español. La duración no es arbitraria: el email promete salir de
+  // la llamada con el proceso identificado y una estimación, y eso no cabe en 15 minutos con
+  // alguien a quien no conoces.
+  // VERIFICAR QUE EXISTE antes de poner active: true — un 404 aquí mata la única conversión
+  // que importa:
+  //   curl -o /dev/null -w '%{http_code}\n' -L https://cal.com/taller-de-digitalizacion/llamada-20-min-automatizacion
+  bookingUrl: 'https://cal.com/taller-de-digitalizacion/llamada-20-min-automatizacion',
   dailySendCap: 5,
   cities: [
     'Madrid', 'Barcelona', 'Valencia', 'Sevilla', 'Zaragoza', 'Málaga', 'Murcia',

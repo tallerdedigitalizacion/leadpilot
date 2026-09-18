@@ -90,10 +90,18 @@ extracción de emails, y los contadores se restauraron después.
 
 **Para encenderla hacen falta tres cosas, en este orden:**
 
-1. **Crear el evento de 20 minutos en Cal.com** con el slug `20min` bajo
-   `taller-de-digitalizacion`. Hoy `campaigns.ts` apunta a
-   `https://cal.com/taller-de-digitalizacion/20min`, que todavía no existe: si se enciende
-   antes, los emails saldrían con un enlace roto.
+1. **Crear el evento de 20 minutos en español en Cal.com**, slug
+   `llamada-20-min-automatizacion` bajo `taller-de-digitalizacion` (comprobado el
+   2026-09-18: devuelve 404, todavía no existe). `campaigns.ts` ya apunta ahí. Veinte y no
+   quince porque el email promete salir de la llamada con el proceso identificado y una
+   estimación. Verificar antes de encender:
+   ```
+   curl -o /dev/null -w '%{http_code}\n' -L https://cal.com/taller-de-digitalizacion/llamada-20-min-automatizacion
+   ```
+   Estado de los slugs a esa fecha: `free-15-min-website-speed-call` 200 (ahora el de
+   `us-webaudit`), `30min` 200 (ya no se usa), `20min` 404, `free-15-min-website-audit-call`
+   404 — este último **sigue enlazado en `email-autoevaluacion.html:250`**, arreglarlo o
+   borrar el archivo si ya no se usa.
 2. **Revisar el copy generado.** Los 6 leads de la prueba tienen `emailSubject`/`emailBody`
    y `linkedinPost` reales en DynamoDB — leerlos antes de que esto le llegue a nadie. El
    informe se regenera sin coste de deploy editando el prompt en `leadpilot-prompts`.
