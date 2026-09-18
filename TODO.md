@@ -32,6 +32,54 @@ abajo). Sigue pendiente decidir:
   no que la campaña esté activa hoy (puede haber falsos positivos de campañas viejas sin
   desactivar) — aun así, margen de error más chico que la heurística actual de SerpApi.
 
+### 2. CI local: typecheck, lint, formato y tests (no existe nada hoy)
+Comprobado el 2026-09-18: el repo no tiene **ninguna** verificación automática. Ni ESLint,
+ni Prettier, ni `.editorconfig`, ni runner de tests, ni hooks de git (husky/lint-staged),
+ni workflows de GitHub Actions. Los únicos scripts son `build` (esbuild por Lambda, `tsc`
+en infra y frontend) y `deploy`.
+
+Lo más grave, y la razón de abrir este ítem: **nada comprueba los tipos del código de las
+Lambdas**. `CLAUDE.md` afirma que el bundling de esbuild en `cdk synth` es "the only type
+checking that actually runs on them" — es falso, esbuild borra los tipos sin validarlos.
+Ni `cdk synth` ni `npm run build` detectan un error de tipos en `packages/functions/`.
+
+Caso real que lo demuestra (2026-09-18): al mergear la rama del prompt store con el
+follow-up condicional de `main`, git resolvió sin conflictos pero dejó en
+`simulate-followup/index.ts` una llamada `buildLinks(lead, TRACKING_BASE_URL, trackingSecret)`
+de 3 argumentos contra una firma de 4 (`lead, trackingBaseUrl, frontendUrl, trackingSecret`).
+El secreto de tracking cayó en el hueco de `frontendUrl`, `trackingSecret` llegó `undefined`
+y `createHmac` reventó: `POST /leads/{id}/simulate-followup` devolvía 500 en la rama engaged.
+Pasó un `cdk synth` limpio y llegó a producción. Arreglado en `5394209`.
+
+Esto importa más que en un repo normal porque aquí no hay entorno de staging ni suite de
+tests: `cdk deploy` va directo a la única cuenta de producción. Las verificaciones locales
+serían la única red de seguridad que existe.
+
+Orden propuesto, de más a menos retorno por esfuerzo:
+
+1. **Typecheck de las Lambdas** (lo urgente). Este comando ya funciona, tarda segundos y
+   hoy da cero errores:
+   ```
+   npx tsc --noEmit --skipLibCheck --esModuleInterop --resolveJsonModule --target es2020 \
+     --module commonjs --moduleResolution node --strict packages/functions/*/index.ts
+   ```
+   Convertirlo en `npm run typecheck` en la raíz — mejor con un `tsconfig.json` compartido
+   en `packages/functions/` que con la lista larga de flags. Y **corregir la afirmación
+   equivocada de `CLAUDE.md`**, que hoy manda a la gente a confiar en `cdk synth`.
+2. **ESLint + Prettier**, con una regla que habría atrapado bugs ya vistos en este repo:
+   `@typescript-eslint/no-floating-promises` (el comentario de `llm-client.ts` explica por
+   qué un `await` perdido pierde escrituras en Lambda).
+3. **Hook de pre-commit** (husky + lint-staged) corriendo typecheck y lint sobre lo tocado.
+4. **Tests**, empezando por lo que es lógica pura y determinista, sin AWS de por medio:
+   `VALID_TRANSITIONS` de `update-lead-status`, `pickEngagedFinding` y `buildLinks` de
+   `shared/followup-email.ts`, `signToken`/`verifyToken` de `shared/tracking.ts`,
+   `renderPrompt` de `shared/prompt-store.ts`, `toSerpApiLocation`, `isBlockedDomain` y
+   `findWebsiteByName` de los providers, y `computeCostUsd` de `shared/llm-pricing.ts`.
+   Relacionado con el ítem 1 de "Mejoras de AI engineering" (evals), pero no es lo mismo:
+   esto son tests unitarios de código determinista, los evals miden salidas del LLM.
+5. **GitHub Actions** corriendo 1-3 en cada push, una vez que pasen en local.
+
+
 ## Mejoras de AI engineering (portfolio + calidad real) — evaluado 2026-07-26
 
 LeadPilot ya es un caso de estudio real de producción con LLMs (pipeline con criterio de
