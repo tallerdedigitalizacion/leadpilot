@@ -148,7 +148,7 @@ async function simulateEngagedFollowup(leadId: string): Promise<APIGatewayProxyR
   ]);
   const reportHtml = await s3Result.Body?.transformToString() ?? '';
   const client = new Anthropic({ apiKey: anthropicParam.Parameter!.Value! });
-  const { trackingUrl, unsubscribeUrl, bookingUrl } = buildLinks(lead, TRACKING_BASE_URL, trackingSecretParam.Parameter!.Value!);
+  const { trackingUrl, unsubscribeUrl, bookingUrl } = buildLinks(lead, TRACKING_BASE_URL, FRONTEND_URL, trackingSecretParam.Parameter!.Value!);
 
   const finding = pickEngagedFinding(lead);
   const emailData = await generateEngagedFollowupEmail(client, lead.leadId, reportHtml, finding, lead.businessName, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
