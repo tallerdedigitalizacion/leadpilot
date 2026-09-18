@@ -58,3 +58,63 @@ export async function generateFollowupEmail(
     .replace(/__UNSUBSCRIBE_URL__/g, unsubscribeUrl);
   return { subject, body };
 }
+
+// Rama A del seguimiento condicional: el lead ya hizo click en el reporte (está
+// ENGAGED). En vez del recordatorio genérico de arriba, referencia un hallazgo concreto
+// del análisis — prioriza datos numéricos (tiempo de carga) sobre texto genérico, para
+// que el email no termine sonando a "¿viste mi email anterior?".
+export function pickEngagedFinding(lead: LeadItem): string {
+  const speedIndex = lead.pagespeedMobile?.speedIndex;
+  if (speedIndex) return `un tiempo de carga de ${speedIndex.toFixed(1)}s en la versión mobile de la home`;
+
+  const lcp = lead.pagespeedMobile?.lcp;
+  if (lcp) return `un Largest Contentful Paint de ${lcp.toFixed(1)}s en mobile`;
+
+  const cwvIssue = lead.webAnalysis?.performanceSummary.coreWebVitalsIssues[0];
+  if (cwvIssue) return cwvIssue;
+
+  const topFix = lead.webAnalysis?.top3Fixes[0];
+  if (topFix) return topFix;
+
+  return lead.webAnalysis?.headlinePain ?? 'el problema principal identificado en el reporte';
+}
+
+export async function generateEngagedFollowupEmail(
+  client: Anthropic,
+  leadId: string,
+  reportHtml: string,
+  headlineFinding: string,
+  businessName: string,
+  trackingUrl: string,
+  unsubscribeUrl: string,
+  bookingUrl: string,
+  canSpamAddress: string,
+): Promise<{ subject: string; body: string }> {
+  const { content: template, version } = await getActivePrompt('engaged-followup-email');
+  const prompt = renderPrompt(template, {
+    businessName,
+    headlineFinding,
+    signalBoxFormat: SIGNAL_BOX_FORMAT,
+    emailFooter: emailFooterFormat({ bookingUrl, canSpamAddress }),
+    reportHtml: reportHtml.slice(0, 30000),
+  });
+
+  const message = await trackedCompletion(client, {
+    promptId: 'engaged-followup-email',
+    promptVersion: version,
+    leadId,
+    model: 'claude-sonnet-4-6',
+    max_tokens: 2000,
+    messages: [{ role: 'user', content: prompt }],
+  });
+
+  const block = message.content[0];
+  const text = block.type === 'text' ? block.text : '';
+  const subjectMatch = text.match(/^Subject:\s*(.+)/m);
+  const subject = subjectMatch ? subjectMatch[1].trim() : '';
+  const rawBody = text.replace(/^Subject:.*\n?/, '').trim();
+  const body = rawBody
+    .replace(/__REPORT_URL__/g, trackingUrl)
+    .replace(/__UNSUBSCRIBE_URL__/g, unsubscribeUrl);
+  return { subject, body };
+}

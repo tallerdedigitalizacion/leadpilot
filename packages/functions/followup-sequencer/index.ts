@@ -1,8 +1,11 @@
 // EventBridge cron (rate 1 day) — reemplaza a no-response-checker. Empuja leads sin
 // respuesta a través de FOLLOWUP_1 -> FOLLOWUP_2 -> ARCHIVED (sin respuesta tras el 2do
-// seguimiento), enviando un email de seguimiento en los dos primeros saltos. Cualquier
-// clic/respuesta manual saca al lead de la query (deja de estar en el status que este
-// cron consulta) y detiene la cadena.
+// seguimiento), enviando un email de seguimiento en los dos primeros saltos. Un click en
+// el reporte saca al lead de esa cadena (track-click lo pasa a ENGAGED) — en vez de
+// perder todo seguimiento, entra a la rama A de abajo: un único email personalizado
+// referenciando un hallazgo concreto del reporte, 5 días después del click
+// (engagedAt), guardado por `engagedFollowupSentAt`. Cualquier otra respuesta manual
+// (booking/archivado) sigue sacando al lead de ambas ramas.
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -11,7 +14,7 @@ import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
 import Anthropic from '@anthropic-ai/sdk';
 import type { LeadItem, LeadStatus, TimelineEvent } from '../shared/types';
 import { sendLeadEmail, getSharedDailyCap, getSentCountToday, incrementSentCountToday } from '../shared/send-lead-email';
-import { buildLinks as buildFollowupLinks, generateFollowupEmail } from '../shared/followup-email';
+import { buildLinks as buildFollowupLinks, generateFollowupEmail, pickEngagedFinding, generateEngagedFollowupEmail } from '../shared/followup-email';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const s3 = new S3Client({ region: process.env.AWS_REGION ?? 'us-east-1' });
@@ -38,6 +41,18 @@ const THRESHOLDS: Array<{
   { fromStatus: 'FOLLOWUP_1', toStatus: 'FOLLOWUP_2', afterMs: 14 * DAY, followupNumber: 2 },
   { fromStatus: 'FOLLOWUP_2', toStatus: 'ARCHIVED', afterMs: 28 * DAY },
 ];
+
+// Rama A del seguimiento condicional: leads que ya hicieron click en el reporte (por lo
+// tanto ya están en ENGAGED — ver track-click) reciben un seguimiento personalizado en
+// vez del genérico de arriba. Sin toStatus: el lead se queda en ENGAGED, solo se marca
+// engagedFollowupSentAt para no reenviar.
+const ENGAGED_FOLLOWUP_DELAY_MS = 5 * DAY;
+
+function isEngagedFollowupCandidate(lead: LeadItem, now: number): boolean {
+  return !!lead.clickCount && lead.clickCount > 0
+    && !lead.engagedFollowupSentAt
+    && !!lead.engagedAt && (now - lead.engagedAt) > ENGAGED_FOLLOWUP_DELAY_MS;
+}
 
 let anthropicClient: Anthropic | null = null;
 async function getAnthropicClient(): Promise<Anthropic> {
@@ -86,10 +101,101 @@ export const handler = async (): Promise<void> => {
   let sent = 0;
   let skippedByCapCount = 0;
 
-  // Los seguimientos de día 7/14/28 van primero — tienen fecha comprometida. El backlog de
-  // leads ANALYZED sin enviar (más abajo) no tiene deadline, así que usa lo que sobra del
-  // freno diario. Antes era al revés y un backlog grande dejaba los seguimientos pospuestos
-  // indefinidamente, aunque ya hubieran cumplido su plazo.
+  // Rama A (leads ENGAGED, ya hicieron click) va primero — son los leads más calientes,
+  // priorizan el freno diario por encima de los seguimientos genéricos y del backlog.
+  const engagedCandidates = (await queryAllByStatus('ENGAGED')).filter((lead) => isEngagedFollowupCandidate(lead, now));
+
+  for (const lead of engagedCandidates) {
+    if (lead.unsubscribed) {
+      const timelineEvent: TimelineEvent = { at: now, event: 'ENGAGED_FOLLOWUP_SKIPPED_UNSUBSCRIBED', by: 'system' };
+      await ddb.send(new UpdateCommand({
+        TableName: TABLE,
+        Key: { leadId: lead.leadId },
+        UpdateExpression: 'SET engagedFollowupSentAt = :now, timeline = list_append(timeline, :event)',
+        ExpressionAttributeValues: { ':now': now, ':event': [timelineEvent] },
+      }));
+      continue;
+    }
+
+    if (sentToday >= dailyCap) {
+      skippedByCapCount++;
+      continue; // se recoge de nuevo mañana
+    }
+
+    if (!lead.reportHtmlS3Key) {
+      console.error('followup-sequencer: lead engaged sin reporte, no se puede generar seguimiento', lead.leadId);
+      continue;
+    }
+
+    const now2 = Date.now();
+    let subject = '';
+    let body = '';
+    let sendError: string | null = null;
+
+    try {
+      const s3Result = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: lead.reportHtmlS3Key }));
+      const reportHtml = await s3Result.Body?.transformToString() ?? '';
+      const client = await getAnthropicClient();
+      const { trackingUrl, unsubscribeUrl, bookingUrl } = await buildLinks(lead);
+      const finding = pickEngagedFinding(lead);
+      const emailData = await generateEngagedFollowupEmail(client, lead.leadId, reportHtml, finding, lead.businessName, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
+      subject = emailData.subject;
+      body = emailData.body;
+
+      const toAddresses = [...new Set([...(lead.emails ?? []), ...(lead.email ? [lead.email] : [])])];
+      if (toAddresses.length === 0) throw new Error('Lead has no email address');
+
+      await ses.send(new SendEmailCommand({
+        Source: FROM_EMAIL,
+        Destination: { ToAddresses: toAddresses, BccAddresses: [FROM_EMAIL] },
+        Message: { Subject: { Data: subject, Charset: 'UTF-8' }, Body: { Html: { Data: body, Charset: 'UTF-8' } } },
+      }));
+    } catch (err) {
+      sendError = err instanceof Error ? err.message : String(err);
+    }
+
+    const eventName = `ENGAGED_FOLLOWUP_${sendError ? 'SEND_FAILED' : 'SENT'}`;
+    const timelineEvent: TimelineEvent = sendError
+      ? { at: now2, event: eventName, by: 'system', note: sendError }
+      : { at: now2, event: eventName, by: 'system', meta: { subject } };
+
+    if (sendError) {
+      // No se toca engagedFollowupSentAt — el cron de mañana reintenta solo
+      await ddb.send(new UpdateCommand({
+        TableName: TABLE,
+        Key: { leadId: lead.leadId },
+        UpdateExpression: 'SET timeline = list_append(timeline, :event)',
+        ExpressionAttributeValues: { ':event': [timelineEvent] },
+      }));
+      console.error('followup-sequencer: engaged follow-up send failed', lead.leadId, sendError);
+      continue;
+    }
+
+    try {
+      await ddb.send(new UpdateCommand({
+        TableName: TABLE,
+        Key: { leadId: lead.leadId },
+        UpdateExpression: 'SET engagedFollowupSentAt = :now, emailSubject = :subject, emailBody = :body, timeline = list_append(timeline, :event)',
+        ConditionExpression: '#status = :engaged',
+        ExpressionAttributeNames: { '#status': 'status' },
+        ExpressionAttributeValues: { ':engaged': 'ENGAGED', ':now': now2, ':subject': subject, ':body': body, ':event': [timelineEvent] },
+      }));
+      await incrementSentCountToday(ddb, COUNTERS_TABLE);
+      sentToday++;
+      sent++;
+      advanced++;
+    } catch (err: any) {
+      if (err?.name !== 'ConditionalCheckFailedException') throw err;
+      // El lead avanzó por otra vía (booking/archivado manual) justo entre la query y este
+      // update — el email ya salió, pero no pisamos su estado real.
+    }
+  }
+
+  // Después de rama A (arriba), los seguimientos genéricos de día 7/14/28 — tienen fecha
+  // comprometida. El backlog de leads ANALYZED sin enviar (más abajo) no tiene deadline,
+  // así que usa lo que sobra del freno diario. Antes el backlog iba antes que los
+  // seguimientos y uno grande los dejaba pospuestos indefinidamente, aunque ya hubieran
+  // cumplido su plazo.
   for (const threshold of THRESHOLDS) {
     const candidates = (await queryAllByStatus(threshold.fromStatus)).filter(
       (lead) => lead.sentAt && (now - lead.sentAt) > threshold.afterMs

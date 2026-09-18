@@ -18,7 +18,7 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
   const [previewSent, setPreviewSent]   = useState(false);
   const [regenLoading, setRegenLoading] = useState(false);
   const [markingLinkedin, setMarkingLinkedin] = useState(false);
-  const [simulatingFollowup, setSimulatingFollowup] = useState<1 | 2 | null>(null);
+  const [simulatingFollowup, setSimulatingFollowup] = useState<1 | 2 | 'engaged' | null>(null);
   const [error, setError]               = useState<string | null>(null);
   const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -128,7 +128,7 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
     }
   };
 
-  const handleSimulateFollowup = async (followupNumber: 1 | 2) => {
+  const handleSimulateFollowup = async (followupNumber: 1 | 2 | 'engaged') => {
     setSimulatingFollowup(followupNumber);
     setError(null);
     try {
@@ -412,6 +412,23 @@ export default function ResourcesPanel({ lead, onLeadUpdate }: Props) {
               : lead.status === 'SENT'
               ? 'Simular seguimiento 1 (día 7)'
               : 'Simular seguimiento 2 (día 14)'}
+          </button>
+        </section>
+      )}
+
+      {/* Simular seguimiento Rama A — lead ya hizo click en el reporte (ENGAGED) */}
+      {lead.status === 'ENGAGED' && (
+        <section className="border rounded-lg p-4 space-y-2 bg-amber-50 border-amber-200">
+          <h3 className="text-sm font-semibold text-amber-800">Simular seguimiento personalizado (prueba)</h3>
+          <p className="text-xs text-amber-700">
+            Dispara ahora mismo el email de seguimiento post-click (referencia un hallazgo concreto del reporte), sin esperar los 5 días reales. No consume el freno diario.
+          </p>
+          <button
+            onClick={() => handleSimulateFollowup('engaged')}
+            disabled={simulatingFollowup !== null}
+            className="px-3 py-1.5 bg-amber-600 text-white text-sm font-medium rounded hover:bg-amber-700 disabled:opacity-50"
+          >
+            {simulatingFollowup !== null ? 'Enviando…' : 'Simular seguimiento personalizado (post-click)'}
           </button>
         </section>
       )}

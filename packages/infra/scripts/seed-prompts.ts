@@ -280,12 +280,45 @@ REGLAS:
 REPORTE HTML:
 {{reportHtml}}`;
 
+const ENGAGED_FOLLOWUP_EMAIL_TEMPLATE = `Se te va a proporcionar el reporte del prospecto como archivo HTML. Ya se le envió un email inicial con este mismo reporte y esta vez SÍ entró a verlo (hizo clic en el link del reporte) — a diferencia de un seguimiento genérico, acá sabemos que ya lo revisó.
+
+Genera un email de seguimiento CORTO, tono 1:1 y personal — como si le escribieras a alguien que sabés que ya vio tu trabajo, no un recordatorio genérico. Referenciá que ya revisó el informe de "{{businessName}}" y preguntá directamente sobre este hallazgo concreto (parafraseálo en una frase natural, no lo copies literal): {{headlineFinding}}.
+
+El asunto en la primera línea como texto plano. El cuerpo en HTML puro con estilos inline, sin <style> ni clases.
+
+Formato exacto:
+
+Subject: [breve, personal, deja claro que sabés que vio el reporte]
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Hi,</p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">[1-2 frases: notaste que revisó el reporte, preguntá sobre el hallazgo específico de arriba, ofrecé explicar el impacto en conversión/negocio si le sirve. Tono curioso, no de venta.]</p>
+
+<div style="margin:0 0 16px;">
+[exactamente 1 caja con este formato, retomando el mismo hallazgo:
+{{signalBoxFormat}}
+]
+</div>
+
+{{emailFooter}}
+
+REGLAS:
+- Exactamente 1 caja de problema — el hallazgo específico de arriba, no otro
+- No inventes datos que no estén en el reporte o en el hallazgo dado
+- Sin introducción ni explicación. Solo el email listo para enviar
+- Todo con estilos inline exactamente como en el formato
+
+---
+REPORTE HTML:
+{{reportHtml}}`;
+
 const PROMPTS: PromptSeed[] = [
   { promptId: 'vision-analysis', content: VISION_USER_TEMPLATE, systemPrompt: VISION_SYSTEM_PROMPT },
   { promptId: 'report-html', content: REPORT_HTML_TEMPLATE },
   { promptId: 'cold-email', content: COLD_EMAIL_TEMPLATE },
   { promptId: 'linkedin-post', content: LINKEDIN_POST_TEMPLATE },
   { promptId: 'followup-email', content: FOLLOWUP_EMAIL_TEMPLATE },
+  { promptId: 'engaged-followup-email', content: ENGAGED_FOLLOWUP_EMAIL_TEMPLATE },
 ];
 
 async function seedPrompt(seed: PromptSeed): Promise<void> {
