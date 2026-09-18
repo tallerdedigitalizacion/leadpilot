@@ -217,6 +217,15 @@ cualquier análisis futuro, sobre todo de sitios con carga lenta.
 
 ## Limpieza pendiente (menor, no urgente)
 
+- **Claves de prompt sin prefijo, huérfanas** (2026-09-18): al pasar a claves
+  `${campaignId}/${promptId}` se sembraron las nuevas (`us-webaudit/*`) sin borrar las
+  viejas (`vision-analysis`, `report-html`, `cold-email`, `linkedin-post`,
+  `followup-email`, `engaged-followup-email`). Se dejaron a propósito como red de rollback:
+  si hubiera que volver atrás, el código anterior las sigue encontrando. Verificado que el
+  contenido de las 6 es idéntico al de las nuevas. Borrarlas cuando la campaña lleve un
+  tiempo rodando sin sustos — ojo: si se edita un prompt a mano, hay que editar el
+  prefijado, que es el único que el código lee hoy.
+
 - **Parámetro SSM huérfano**: `/leadpilot/followup-daily-cap` existe en SSM (valor `10`)
   pero ningún código lo lee — el parámetro real es `/leadpilot/daily-send-cap` (wireado a
   `SHARED_DAILY_CAP_PARAM`, valor `20`). Confirmar y borrar el huérfano para no confundir
