@@ -247,6 +247,17 @@ cualquier análisis futuro, sobre todo de sitios con carga lenta.
 
 ## Limpieza pendiente (menor, no urgente)
 
+- **`POST /leads/{id}/regen-email` devuelve 503 aunque funcione** (visto 2026-09-18, es
+  preexistente, no una regresión). La Lambda hace dos llamadas a Claude y tarda ~31 s; el
+  límite de integración de la HTTP API son 30 s fijos y no se puede subir. API Gateway corta
+  y devuelve `{"message":"Service Unavailable"}` mientras la Lambda termina el trabajo y
+  escribe el lead correctamente. Efecto práctico: el botón "Regenerar" de la ficha muestra
+  un error cuando en realidad ha ido bien, y quien lo vea tenderá a pulsarlo otra vez y
+  gastar otra vez el doble de tokens. Confirmado en los logs: `Duration: 31055.78 ms`, con
+  `END` limpio y sin excepción. Arreglo real: hacerla asíncrona como `generate-report`
+  (responder 202 y que el frontend haga polling del lead), no subir timeouts.
+
+
 - **Claves de prompt sin prefijo, huérfanas** (2026-09-18): al pasar a claves
   `${campaignId}/${promptId}` se sembraron las nuevas (`us-webaudit/*`) sin borrar las
   viejas (`vision-analysis`, `report-html`, `cold-email`, `linkedin-post`,
