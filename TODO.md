@@ -80,6 +80,36 @@ Orden propuesto, de más a menos retorno por esfuerzo:
 5. **GitHub Actions** corriendo 1-3 en cada push, una vez que pasen en local.
 
 
+## Campaña es-sprint — construida y probada, pendiente de encender (2026-09-18)
+
+Todo el camino está desplegado y verificado en producción contra 6 clínicas dentales reales
+de Madrid (`campaignId: es-sprint`): SerpApi con locale español, captura + HTML renderizado,
+detección de fricción, análisis, informe, email y post de LinkedIn. **No salió ningún email
+ni ninguna publicación** — la prueba se corrió con los contadores diarios bloqueados y sin
+extracción de emails, y los contadores se restauraron después.
+
+**Para encenderla hacen falta tres cosas, en este orden:**
+
+1. **Crear el evento de 20 minutos en Cal.com** con el slug `20min` bajo
+   `taller-de-digitalizacion`. Hoy `campaigns.ts` apunta a
+   `https://cal.com/taller-de-digitalizacion/20min`, que todavía no existe: si se enciende
+   antes, los emails saldrían con un enlace roto.
+2. **Revisar el copy generado.** Los 6 leads de la prueba tienen `emailSubject`/`emailBody`
+   y `linkedinPost` reales en DynamoDB — leerlos antes de que esto le llegue a nadie. El
+   informe se regenera sin coste de deploy editando el prompt en `leadpilot-prompts`.
+3. **Poner `active: true`** en `ES_SPRINT` (`shared/campaigns.ts`) y desplegar. Arranca con
+   `dailySendCap: 5`. Ojo: el cron pasa a lanzar 2 jobs de SerpApi al día en vez de 1.
+
+**Los 6 leads de la prueba no tienen email** (se scrapearon con `extractEmails: false` a
+propósito) y por tanto nunca se les va a enviar nada — se quedan en `ANALYZED`, igual que el
+lote de Austin de julio. Además, el dedup por `url-index` hace que un scrape futuro de
+"clínica dental" en Madrid **se los salte**, así que esos 6 negocios concretos no volverán a
+entrar con email. Si interesan, hay que añadirles el email a mano desde la ficha; si no,
+borrarlos para que puedan volver a entrar limpios.
+
+Pendiente menor: el cap diario de LinkedIn sigue siendo global, no por campaña — si las dos
+campañas están activas comparten los 3 posts/día.
+
 ## Mejoras de AI engineering (portfolio + calidad real) — evaluado 2026-07-26
 
 LeadPilot ya es un caso de estudio real de producción con LLMs (pipeline con criterio de

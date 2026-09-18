@@ -5,10 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 LeadPilot is Pablo Leone's B2B prospecting automation tool. It scrapes local businesses
-from Google Maps, auto-qualifies them, analyzes their website (PageSpeed + a Claude
-vision pass over a screenshot), generates a personalized cold email + LinkedIn post, and
-sends/publishes both automatically — then runs a day-7/day-14 follow-up sequence by
-email. A React frontend (`packages/frontend`) is the manual-review/dashboard UI, but the
+from Google Maps, auto-qualifies them, analyzes their website (PageSpeed + rendered HTML +
+a Claude vision pass over a screenshot), generates a personalized cold email + LinkedIn
+post, and sends/publishes both automatically — then runs a day-7/day-14 follow-up sequence
+by email.
+
+It runs **campaigns**: the same pipeline can sell different things to different markets.
+`us-webaudit` sells web audits to US local businesses in English; `es-sprint` sells a
+fixed-price automation sprint to Spanish SMEs in Spanish, using an analysis that looks for
+manual processes rather than slow pages. See "Campaigns" below before changing any copy. A React frontend (`packages/frontend`) is the manual-review/dashboard UI, but the
 core value is that the pipeline runs unattended end to end.
 
 There is no local dev/staging environment — `npm run deploy` (or `cdk deploy`) ships
@@ -39,11 +44,20 @@ aws s3 sync packages/frontend/dist/ s3://<FrontendBucketName-from-stack-outputs>
 aws cloudfront create-invalidation --distribution-id <dist-id> --paths "/*"
 ```
 
-No test suite exists in this repo. Lambda code has no `tsconfig.json` of its own — CDK's
-`NodejsFunction` bundles each Lambda with esbuild at deploy time, which is the only type
-checking that actually runs on them (no standalone `tsc` step). Run `cdk synth` to catch
-bundling/type errors across every Lambda before deploying if you've touched several at
-once.
+No test suite, no linter, no formatter and no CI exist in this repo — see `TODO.md` item 2.
+
+**`cdk synth` does not typecheck.** Lambda code has no `tsconfig.json` of its own, and both
+`cdk synth` and `npm run build` go through esbuild, which strips types without checking
+them. A wrong-arity call shipped to production through a clean synth on 2026-09-18. Until
+the backlog item lands, run this by hand before deploying anything under
+`packages/functions/` — it takes seconds and currently reports zero errors:
+
+```bash
+npx tsc --noEmit --skipLibCheck --esModuleInterop --resolveJsonModule --target es2020 \
+  --module commonjs --moduleResolution node --strict packages/functions/*/index.ts
+```
+
+`cdk synth` is still worth running: it validates that every Lambda actually bundles.
 
 ## Architecture
 
@@ -71,8 +85,10 @@ transitions are legal; most of the pipeline below happens automatically without 
 going through that Lambda, by other Lambdas writing `status` directly.
 
 ```
-scrape-jobs/scrape-worker → ingest-leads (auto-QUALIFIED)
-  → run-analysis → analysis-worker (PageSpeed + screenshot + Claude vision → webAnalysis)
+auto-scrape-scheduler (daily cron, one job per ACTIVE campaign)
+  → scrape-jobs/scrape-worker → ingest-leads (auto-QUALIFIED, stamps campaignId)
+  → run-analysis → analysis-worker (PageSpeed + screenshot + rendered HTML →
+                    deterministic friction detection + Claude vision → webAnalysis)
     → generate-report (report HTML to S3, cold email + LinkedIn post via Claude,
                         auto-send via SES, auto-publish via Buffer) → ANALYZED/SENT
       → track-click (email link click → ENGAGED) / calcom-webhook (booking → BOOKED)
@@ -89,14 +105,81 @@ lead", read the full timeline before anything else.
 `get-stats` does a full table scan grouping by `status` — cheap because volume is low,
 but don't build anything against this table that would care about scan cost.
 
-### Two scraper providers, one dispatcher
+### Campaigns — read this before changing any copy
 
-`scrape-worker/index.ts` is a thin dispatcher reading `job.provider` (`'gosom'` or
-`'serpapi'`) and calling `gosom-provider.ts` or `serpapi-provider.ts`, both normalized to
-the same `ScrapedLead` shape (`scrape-worker/types.ts`). `auto-scrape-scheduler` is the
-daily cron (city × sector matrix) that reads `/leadpilot/scrape-provider` (SSM) fresh
-every run to decide which provider to use — this is the single toggle for switching the
-whole automated pipeline between providers without a redeploy. Manual scrapes from the
+A campaign is the bundle of *who we write to and what we sell them*: ICP (cities ×
+verticals), language and search locale, sender identity, booking URL and send caps. Two
+exist in `shared/campaigns.ts`: `us-webaudit` (web audits, US, English, active) and
+`es-sprint` (the Sprint de Automatización, Spain, Spanish, **inactive**). Every lead,
+scrape job and scraped lead carries `campaignId`; absent means `us-webaudit`, which is what
+every lead predating this has.
+
+The split is deliberate and matters when you go to change something:
+
+- **Config lives in code** (`shared/campaigns.ts`). The ICP changes rarely and belongs in
+  git history — a cron that silently starts writing to a different sector is not something
+  you want to discover by diffing a DynamoDB row. Changing it needs a redeploy.
+- **Copy lives in DynamoDB** (`leadpilot-prompts`), under keys `${campaignId}/${promptId}`,
+  six per campaign: `vision-analysis`, `report-html`, `cold-email`, `linkedin-post`,
+  `followup-email`, `engaged-followup-email`. Editing the message needs no deploy — just
+  edit the `ACTIVE` item. `shared/prompt-store.ts` caches for 5 minutes.
+
+Two traps:
+
+1. **Seed before you deploy.** `getActivePrompt` throws when a campaign's prompt is
+   missing — there is deliberately no fallback to the default campaign, because inheriting
+   silently would mean sending a Spanish prospect another offer's English copy. If you add
+   a campaign or rename a prompt, run `scripts/seed-prompts.ts` (idempotent, `--campaign=`
+   to scope it, `--force` to overwrite) *first*.
+2. **`renderPrompt` only substitutes the placeholders a template contains**, and logs an
+   error + substitutes `''` for one it cannot resolve. Passing extra variables is free,
+   which is how `es-sprint` gets `frictionSignals`/`pageText` without `us-webaudit` caring.
+   The flip side: a typo in a `{{placeholder}}` fails silently at runtime. There is no
+   check for this — cross-check by hand against the `renderPrompt` call site.
+
+The unprefixed prompt keys from before this change are still in the table, orphaned, as a
+rollback net (`TODO.md`). Edit the prefixed ones; nothing reads the others.
+
+### Friction analysis — what the vision pass actually looks for
+
+`us-webaudit` asks Claude about performance and visual quality. `es-sprint` asks it to find
+*a business process being done by hand* — the thing its offer removes. Same code path, and
+the difference lives entirely in the prompt.
+
+`shared/friction.ts` does a deterministic pass over the rendered HTML first (booking tools,
+chat widgets, `wa.me` links, `mailto:`-only forms, `tel:` links) and hands the result to the
+prompt as established fact, the same way cookie detection already worked. Whether a widget
+is on the page is verifiable; leaving it to the model invites hallucinating one. The
+`es-sprint` prompt is told these signals outrank its visual impression — which is what lets
+it say things like "the PIDE CITA button is decorative".
+
+Finding a booking tool is a **negative** signal for this offer: that business already
+automated what we were going to sell.
+
+The HTML comes from the screenshot-service, post-JS, because booking and chat widgets are
+script-injected. If it is missing, `detectFriction` returns zero signals and says so rather
+than reading as "no friction" — so a stale ECR image degrades instead of lying.
+
+`WebAnalysis.frictionSignals` and `.processHypothesis` are optional and only `es-sprint`
+produces them.
+
+### Three scraper providers, one dispatcher
+
+`scrape-worker/index.ts` is a thin dispatcher reading `job.provider` and calling
+`gosom-provider.ts`, `serpapi-provider.ts` (Maps local pack) or `serpapi-web-provider.ts`
+(plain web SERP ads, for verticals with no physical location), all normalized to the same
+`ScrapedLead` shape (`scrape-worker/types.ts`). The worker stamps `campaignId` on every
+lead in one place, so the providers don't each have to.
+
+`auto-scrape-scheduler` is the daily cron. It picks a random city and vertical from each
+**active campaign's** own ICP and fires one job per campaign — so activating a second
+campaign doubles SerpApi usage, which matters on the free plan. The provider comes from the
+campaign if it pins one, otherwise from `/leadpilot/scrape-provider` (SSM), read fresh every
+run — that parameter is still the no-redeploy toggle for campaigns that don't pin.
+Both SerpApi providers take `gl`/`hl`/`google_domain` from the campaign's locale, and
+`toSerpApiLocation` takes an optional country for cities outside the US.
+
+Manual scrapes from the
 frontend (`ScrapeLeads.tsx`) let the user pick per-request.
 
 Neither provider gives a clean "this business pays for Google Ads" signal for free — see
@@ -109,7 +192,8 @@ often doesn't overlap). Whichever provider you're reading code for, don't assume
 
 `analysis-worker` calls `packages/screenshot-service` over HTTP: it launches a fresh
 Fargate task per lead (`RunTaskCommand`), polls for a public IP, POSTs `{url, leadId}` to
-it, and stops the task when done. The image is pulled from ECR (`leadpilot-screenshot`,
+it, and stops the task when done. It returns the S3 key, the cookie-banner detection and
+the **rendered HTML** (capped at 600KB), which is what feeds friction detection. The image is pulled from ECR (`leadpilot-screenshot`,
 tag `latest`) — **CDK does not build or push this image**. If you change
 `packages/screenshot-service/index.ts`, you must rebuild and push it yourself, and you
 must target the correct architecture:
@@ -156,8 +240,12 @@ Verify before moving on: `docker manifest inspect <image>` and confirm
 ## Where things live (reference)
 
 - DynamoDB: `leadpilot-leads` (PK `leadId`, GSIs `status-createdAt-index` and
-  `url-index` for dedup), `leadpilot-send-counters` (PK `date`, daily send/LinkedIn
-  counts), `leadpilot-scrape-jobs` (PK `jobId`).
+  `url-index` for dedup), `leadpilot-send-counters` (PK `date`; `sentCount` and
+  `linkedinPostCount` globally, plus `sentCount#<campaignId>` per campaign),
+  `leadpilot-scrape-jobs` (PK `jobId`), `leadpilot-prompts` (PK `promptId` =
+  `campaignId/promptId`, SK `version` — numeric versions plus an `ACTIVE` pointer item),
+  `leadpilot-llm-logs` (PK `leadId`, SK `logId`, GSI `promptId-at-index` — one row per
+  Claude call with model, prompt version, tokens, cost and latency).
 - S3: one reports bucket (screenshots + generated report HTML), one frontend bucket
   behind CloudFront.
 - SSM params (all under `/leadpilot/`): `anthropic-api-key`, `pagespeed-api-key`,
