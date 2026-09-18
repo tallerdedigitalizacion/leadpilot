@@ -314,6 +314,262 @@ REGLAS:
 REPORTE HTML:
 {{reportHtml}}`;
 
+// ---------------------------------------------------------------------------------------
+// Campaña es-sprint. A diferencia de us-webaudit, estas plantillas llevan el pie y el
+// formato de caja escritos dentro en vez de recibirlos por {{emailFooter}} /
+// {{signalBoxFormat}}: esos helpers viven en shared/email-template.ts en inglés y con la
+// oferta de auditoría. renderPrompt solo sustituye los placeholders que la plantilla trae,
+// así que ignorarlos aquí no afecta a la otra campaña ni requiere tocar código.
+// ---------------------------------------------------------------------------------------
+
+const ES_VISION_SYSTEM_PROMPT = `Eres un consultor de automatización de procesos que audita las webs de pymes españolas para un servicio de prospección B2B. Tu trabajo NO es evaluar diseño ni velocidad: es detectar señales de que un proceso del negocio se lleva a mano.
+
+QUÉ BUSCAS (en este orden de importancia):
+1. Cómo pide el negocio que le contacten. "Llámanos para pedir cita", un teléfono como única llamada a la acción, un horario de atención telefónica publicado, WhatsApp como canal principal, un formulario que solo manda un correo. Todo eso significa que hay una persona haciendo de agenda.
+2. Qué NO tiene. Sin reserva de cita online, sin presupuesto automático, sin área de cliente, sin confirmación automática.
+3. Qué sí tiene ya resuelto. Si encuentras un sistema de reservas o un chat montado, dilo claramente: ese proceso ya está automatizado y no hay nada que vender ahí.
+
+Se te dan tres fuentes: una captura de la home, las señales técnicas ya detectadas en el HTML (fiables, no las contradigas) y el texto de la página. Las señales técnicas mandan sobre tu impresión visual: si dicen que no hay sistema de reservas, no hay, aunque la captura muestre un botón que parezca uno.
+
+REGLAS DE EVIDENCIA (obligatorias):
+- Cada afirmación anclada en algo concreto: cita la frase literal de la web, la señal técnica o lo que se ve en la captura.
+- Nunca inventes procesos, herramientas ni cifras que no puedas verificar con lo que te dan.
+- Si un dato no está, dilo en vez de rellenar.
+- Cero relleno de marketing ni superlativos vacíos.
+- Español de España, tuteo, tono directo de alguien que ya miró la web.
+- Máximo 250 palabras entre todos los campos de texto.
+
+process_hypothesis es el corazón del análisis: una frase que nombre el proceso manual concreto que se podría automatizar y por qué se nota desde fuera. Si el negocio ya lo tiene automatizado, dilo ahí explícitamente.
+
+Responde ÚNICAMENTE con este JSON, sin texto antes ni después, sin backticks de markdown:
+{
+  "headline_pain": "",
+  "visual_assessment": "",
+  "performance_summary": { "mobile_score": 0, "desktop_score": 0, "core_web_vitals_issues": [] },
+  "compliance_flag": "",
+  "top_3_fixes": [],
+  "closing_hook": "",
+  "friction_signals": [],
+  "process_hypothesis": ""
+}`;
+
+const ES_VISION_USER_TEMPLATE = `Analiza la web de {{businessName}}, del sector {{category}}, en {{city}}.
+
+SEÑALES TÉCNICAS DETECTADAS EN EL HTML (fiables, tienen prioridad sobre tu impresión visual):
+{{frictionSignals}}
+
+TEXTO DE LA PÁGINA:
+{{pageText}}
+
+Datos PageSpeed Insights (móvil): {{pagespeedMobile}}
+Datos PageSpeed Insights (escritorio): {{pagespeedDesktop}}
+Gestor de cookies detectado: {{cookieDetected}} {{cookieTool}}
+
+En friction_signals devuelve las señales que de verdad sostienen la hipótesis, reescritas en una frase corta y legible cada una (no copies la lista de arriba literal). En top_3_fixes prioriza automatizaciones concretas del proceso, no arreglos técnicos de la web.`;
+
+const ES_REPORT_HTML_TEMPLATE = `Se te van a proporcionar los datos del prospecto directamente en este mensaje.
+
+Genera un archivo HTML con un informe cuyo tema es DÓNDE SE LE VA EL TIEMPO al negocio, no lo lenta que va su web. Español de España, tuteo.
+
+ESTRUCTURA DEL HTML:
+- Fondo blanco, fuente Arial, 13px, max-width 680px centrado
+- Todo inline o en un bloque <style> en el <head>, sin hojas externas
+
+SECCIONES EN ORDEN:
+
+1. CABECERA
+   - Etiqueta pequeña: "Informe de procesos · #{{id}}"
+   - Nombre del negocio en 22px bold
+   - Web y ciudad en gris debajo
+   - Fecha: {{date}}
+
+2. EL PROCESO QUE HEMOS DETECTADO
+   Título de sección en mayúsculas pequeñas gris.
+   Un párrafo destacado, sobre fondo gris claro y con borde izquierdo naranja de 3px, con la hipótesis del proceso manual. Es la sección más importante del informe: si no dice nada concreto, el informe entero no sirve.
+
+3. EN QUÉ SE NOTA
+   Una lista de las señales encontradas, cada una como una fila con un "→" naranja delante. Cita lo que se ve en la web, no generalidades.
+
+4. QUÉ SE PODRÍA AUTOMATIZAR
+   Los fixes priorizados, numerados, cada uno con una frase de qué cambiaría en el día a día de quien hoy hace ese trabajo a mano. Estimaciones en horas solo si se pueden justificar con algo del informe; si no, nada.
+
+5. DE PASO, LA WEB
+   Sección secundaria y breve, claramente menos importante que las anteriores. Los scores de PageSpeed en cuatro tarjetas pequeñas en cuadrícula 2x2:
+   - Rendimiento móvil: {{mPerformance}}/100
+   - LCP: {{mLcp}} (objetivo: <2,5s)
+   - Rendimiento escritorio: {{dPerformance}}/100
+   - SEO: {{mSeo}}/100
+   Verde si 90+, naranja si 50-89, rojo si <50.
+   Una sola frase de cierre poniéndolo en contexto: es un dato de salud de la web, no el motivo del informe.
+
+6. CONTACTO
+   Teléfono {{phone}} y email {{email}} si existen.
+
+7. PIE
+   Izquierda: la fecha. Derecha: "Taller de Digitalización".
+
+PALETA: rojo #c0392b, naranja #e67e22, verde #27ae60, texto #1a1a1a, grises suaves para fondos.
+
+DATOS DEL PROSPECTO:
+Negocio: {{businessName}} · Sector: {{category}} · Ciudad: {{city}}
+Web: {{url}}
+Teléfono: {{phone}} · Email: {{email}}
+PageSpeed móvil: {{mPerformance}}/100, LCP {{mLcp}}, TBT {{mTbt}}, Speed Index {{mSpeedIndex}}, accesibilidad {{mAccessibility}}, SEO {{mSeo}}, buenas prácticas {{mBestPractices}}
+PageSpeed escritorio: {{dPerformance}}/100, SEO {{dSeo}}
+Análisis: {{webAnalysisSerialized}}
+{{notesSection}}
+
+Devuelve SOLO el HTML completo y autocontenido, sin explicaciones ni markdown.`;
+
+const ES_COLD_EMAIL_TEMPLATE = `Se te va a proporcionar el informe de un prospecto como archivo HTML.
+
+Lo primero: localiza en el informe la sección "El proceso que hemos detectado" y léela con atención. Ese proceso concreto es el argumento central de todo el email. Si el informe dice que el negocio YA tiene ese proceso automatizado, escribe igualmente el email pero apoyado en la segunda señal más fuerte que encuentres.
+
+Escribe un email frío en español de España, tuteando, para el dueño del negocio. El asunto en la primera línea como texto plano. El cuerpo en HTML puro con estilos inline, sin <style> ni clases.
+
+Formato exacto:
+
+Subject: [El proceso manual detectado, en menos de 10 palabras, incluyendo el dominio. Ejemplo: "Las citas de clinicadental-ejemplo.es pasan por teléfono"]
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Hola,</p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">[2 frases: que has mirado su web mientras revisabas negocios de su sector en su ciudad, y el proceso manual concreto que te ha llamado la atención. Nada de halagos ni de "espero que estés bien".]</p>
+
+<div style="margin:0 0 16px;">
+[1 o 2 cajas como máximo, una por señal, con este formato exacto por caja:
+<div style="border-left:3px solid #E67E22;padding:8px 0 8px 12px;margin-bottom:10px;"><span style="color:#E67E22;font-weight:bold;">&rarr;</span> <span style="font-size:14px;line-height:1.6;color:#1A1A1A;">[la señal, citando lo que pone en su web]</span></div>
+]
+</div>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">[1 frase conectando esa señal con lo que le cuesta: horas de alguien, citas que se pierden fuera de horario, presupuestos que tardan. Sin cifras inventadas.]</p>
+
+<p style="margin:0 0 20px;"><a href="__REPORT_URL__" style="display:inline-block;background:#1A1A1A;color:#fff;text-decoration:none;padding:10px 18px;border-radius:4px;font-size:14px;">Ver el informe completo &rarr;</a></p>
+
+<div style="border-top:1px solid #E5E5E5;padding-top:16px;margin-bottom:16px;">
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:8px;"><strong>Lo que hago:</strong> cojo un proceso que hoy llevas a mano y lo dejo funcionando solo, en tu propia cuenta de AWS.</p>
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:8px;">Tres semanas, precio cerrado desde 2.900 €, el código es tuyo. Si en la primera semana no encuentro un proceso que compense automatizar, lo cancelo y te devuelvo el anticipo.</p>
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:0;"><a href="{{bookingUrl}}" style="color:#C0392B;">Hablamos 20 minutos</a> y sales de la llamada con el proceso identificado y una estimación, me contrates o no.</p>
+</div>
+
+<p style="font-size:13px;line-height:1.6;color:#666;margin-bottom:16px;">PD: este correo no lo he escrito yo. Un sistema que construí encontró tu web, la analizó y redactó esto sin que yo tocara nada. Eso es exactamente el tipo de cosa que monto.</p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:4px;">Pablo Leone</p>
+<p style="font-size:13px;line-height:1.5;color:#666;margin-bottom:16px;">Automatización de procesos<br>info@tallerdedigitalizacion.com</p>
+
+<p style="font-size:11px;line-height:1.5;color:#999;border-top:1px solid #E5E5E5;padding-top:12px;">{{canSpamAddress}}<br><a href="__UNSUBSCRIBE_URL__" style="color:#999;">Darse de baja</a></p>
+
+REGLAS:
+- Máximo 2 cajas. El resto es texto normal.
+- No inventes datos que no estén en el informe.
+- Ni una palabra sobre publicidad, Google Ads ni presupuesto publicitario: no sabemos si invierte en eso.
+- No hables de lo lenta que va su web como argumento principal. El argumento es el proceso manual.
+- Sin introducción ni explicación tuya. Solo el email listo para enviar.
+- Deja __REPORT_URL__ y __UNSUBSCRIBE_URL__ tal cual, se sustituyen después.
+
+---
+INFORME HTML:
+{{reportHtml}}`;
+
+const ES_LINKEDIN_POST_TEMPLATE = `Se te va a proporcionar el informe de un prospecto como archivo HTML.
+
+Escribe un post de LinkedIn en español de España sobre lo que ese análisis encontró. El lector es un dueño de pyme o alguien que trabaja en una.
+
+Gancho en la primera línea, concreto y sin signos de interrogación retóricos. Por ejemplo: "Analicé la web de una clínica dental en Valencia. Para pedir cita hay que llamar entre las 9 y las 14."
+
+Estructura:
+- Gancho de 1 o 2 líneas
+- 1 o 2 líneas explicando por qué eso cuesta dinero de verdad, sin dramatizar
+- Una lista corta de 2 a 4 hallazgos, cada uno empezando por "→"
+- Un cierre de 1 o 2 líneas sobre el patrón, no sobre el negocio concreto
+
+REGLAS:
+- No nombres el negocio ni pongas su dominio. Sector y ciudad sí.
+- No vendas nada, no menciones tus servicios, no pongas llamada a la acción.
+- No inventes cifras.
+- Máximo 1200 caracteres.
+- Termina con estos hashtags: #Automatización #Pymes #Procesos
+- Devuelve solo el texto del post, sin comillas ni explicaciones.
+
+---
+INFORME HTML:
+{{reportHtml}}`;
+
+const ES_FOLLOWUP_EMAIL_TEMPLATE = `Se te va a proporcionar el informe de un prospecto como archivo HTML. Ya se le envió un email inicial hace días con este mismo informe y no ha respondido, ni ha hecho clic, ni ha reservado llamada.
+
+{{framing}}
+
+Escribe un email de SEGUIMIENTO CORTO en español de España, tuteando — la mitad de largo que el inicial. El asunto en la primera línea como texto plano. El cuerpo en HTML puro con estilos inline, sin <style> ni clases.
+
+Formato exacto:
+
+Subject: [breve, deja claro que es un seguimiento, incluye el dominio]
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Hola,</p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">[1 o 2 frases retomando el proceso manual del informe, en el tono indicado arriba. No repitas el email inicial palabra por palabra.]</p>
+
+<div style="margin:0 0 16px;">
+[1 caja como máximo, la señal más fuerte, con este formato exacto:
+<div style="border-left:3px solid #E67E22;padding:8px 0 8px 12px;margin-bottom:10px;"><span style="color:#E67E22;font-weight:bold;">&rarr;</span> <span style="font-size:14px;line-height:1.6;color:#1A1A1A;">[la señal]</span></div>
+]
+</div>
+
+<p style="margin:0 0 20px;"><a href="__REPORT_URL__" style="display:inline-block;background:#1A1A1A;color:#fff;text-decoration:none;padding:10px 18px;border-radius:4px;font-size:14px;">Ver el informe completo &rarr;</a></p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Tres semanas, precio cerrado, el código es tuyo. <a href="{{bookingUrl}}" style="color:#C0392B;">Hablamos 20 minutos</a> si te encaja.</p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:4px;">Pablo Leone</p>
+<p style="font-size:13px;line-height:1.5;color:#666;margin-bottom:16px;">Automatización de procesos<br>info@tallerdedigitalizacion.com</p>
+
+<p style="font-size:11px;line-height:1.5;color:#999;border-top:1px solid #E5E5E5;padding-top:12px;">{{canSpamAddress}}<br><a href="__UNSUBSCRIBE_URL__" style="color:#999;">Darse de baja</a></p>
+
+REGLAS:
+- 1 caja como máximo.
+- No inventes datos que no estén en el informe.
+- Ni una mención a publicidad o Google Ads.
+- Sin introducción ni explicación. Solo el email listo para enviar.
+
+---
+INFORME HTML:
+{{reportHtml}}`;
+
+const ES_ENGAGED_FOLLOWUP_EMAIL_TEMPLATE = `Se te va a proporcionar el informe de un prospecto como archivo HTML. Ya se le envió un email inicial con este mismo informe y esta vez SÍ entró a verlo (hizo clic en el enlace) — a diferencia de un seguimiento genérico, aquí sabemos que lo ha revisado.
+
+Escribe un email de seguimiento CORTO en español de España, tuteando, tono 1:1 y personal — como si le escribieras a alguien que sabes que ya ha visto tu trabajo, no un recordatorio automático. Menciona que ha echado un vistazo al informe de "{{businessName}}" y pregúntale directamente por este hallazgo concreto, parafraseado en una frase natural, sin copiarlo literal: {{headlineFinding}}.
+
+El asunto en la primera línea como texto plano. El cuerpo en HTML puro con estilos inline, sin <style> ni clases.
+
+Formato exacto:
+
+Subject: [breve, personal, deja claro que sabes que ha visto el informe]
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Hola,</p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">[1 o 2 frases: viste que abrió el informe, pregunta por el hallazgo concreto de arriba, ofrécete a contarle cómo se quitaría de encima ese proceso. Tono curioso, de conversación, no de venta.]</p>
+
+<div style="margin:0 0 16px;">
+[exactamente 1 caja, retomando ese mismo hallazgo:
+<div style="border-left:3px solid #E67E22;padding:8px 0 8px 12px;margin-bottom:10px;"><span style="color:#E67E22;font-weight:bold;">&rarr;</span> <span style="font-size:14px;line-height:1.6;color:#1A1A1A;">[el hallazgo]</span></div>
+]
+</div>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;"><a href="{{bookingUrl}}" style="color:#C0392B;">Veinte minutos</a> y te digo si tiene arreglo y cuánto costaría. Sin compromiso.</p>
+
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:4px;">Pablo Leone</p>
+<p style="font-size:13px;line-height:1.5;color:#666;margin-bottom:16px;">Automatización de procesos<br>info@tallerdedigitalizacion.com</p>
+
+<p style="font-size:11px;line-height:1.5;color:#999;border-top:1px solid #E5E5E5;padding-top:12px;">{{canSpamAddress}}<br><a href="__UNSUBSCRIBE_URL__" style="color:#999;">Darse de baja</a></p>
+
+REGLAS:
+- Exactamente 1 caja — el hallazgo de arriba, no otro.
+- No inventes datos que no estén en el informe o en el hallazgo dado.
+- Ni una mención a publicidad o Google Ads.
+- Sin introducción ni explicación. Solo el email listo para enviar.
+
+---
+INFORME HTML:
+{{reportHtml}}`;
+
 // Las claves reales en DynamoDB son `${campaignId}/${promptId}` — cada campaña tiene su
 // propio juego de prompts (ver shared/prompt-store.ts y shared/campaigns.ts). Estos seis son
 // los de la campaña original; los de es-sprint se añaden cuando exista su copy.
@@ -325,6 +581,14 @@ const CAMPAIGN_PROMPTS: Record<string, PromptSeed[]> = {
     { promptId: 'linkedin-post', content: LINKEDIN_POST_TEMPLATE },
     { promptId: 'followup-email', content: FOLLOWUP_EMAIL_TEMPLATE },
     { promptId: 'engaged-followup-email', content: ENGAGED_FOLLOWUP_EMAIL_TEMPLATE },
+  ],
+  'es-sprint': [
+    { promptId: 'vision-analysis', content: ES_VISION_USER_TEMPLATE, systemPrompt: ES_VISION_SYSTEM_PROMPT },
+    { promptId: 'report-html', content: ES_REPORT_HTML_TEMPLATE },
+    { promptId: 'cold-email', content: ES_COLD_EMAIL_TEMPLATE },
+    { promptId: 'linkedin-post', content: ES_LINKEDIN_POST_TEMPLATE },
+    { promptId: 'followup-email', content: ES_FOLLOWUP_EMAIL_TEMPLATE },
+    { promptId: 'engaged-followup-email', content: ES_ENGAGED_FOLLOWUP_EMAIL_TEMPLATE },
   ],
 };
 

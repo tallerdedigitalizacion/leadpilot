@@ -13,6 +13,7 @@ import type { LeadItem, PageSpeedScore, TimelineEvent, WebAnalysis } from '../sh
 import { fetchPageSpeed } from '../shared/pagespeed';
 import { getActivePrompt, promptKey, renderPrompt } from '../shared/prompt-store';
 import { getCampaign } from '../shared/campaigns';
+import { detectFriction, extractPageText } from '../shared/friction';
 import { trackedCompletion } from '../shared/llm-client';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
@@ -97,7 +98,7 @@ async function waitForPublicIp(taskArn: string): Promise<string> {
   throw new Error('Timeout esperando que la tarea de captura llegue a RUNNING con IP pública');
 }
 
-async function requestScreenshot(publicIp: string, url: string, leadId: string): Promise<{ s3Key: string; cookieDetected: boolean; cookieTool?: string }> {
+async function requestScreenshot(publicIp: string, url: string, leadId: string): Promise<{ s3Key: string; cookieDetected: boolean; cookieTool?: string; html?: string }> {
   const token = await getScreenshotToken();
   const deadline = Date.now() + 65_000;
   let lastError: unknown;
@@ -141,8 +142,10 @@ async function runVisionAnalysis(
   pagespeedDesktop: PageSpeedScore | undefined,
   cookieDetected: boolean,
   cookieTool: string | undefined,
+  html: string | undefined,
 ): Promise<WebAnalysis | undefined> {
   const campaignId = getCampaign(lead.campaignId).campaignId;
+  const friction = detectFriction(html);
   const { content: template, systemPrompt, version } = await getActivePrompt(campaignId, 'vision-analysis');
   const userText = renderPrompt(template, {
     businessName: lead.businessName,
@@ -152,6 +155,12 @@ async function runVisionAnalysis(
     pagespeedDesktop: JSON.stringify(pagespeedDesktop ?? 'no disponible'),
     cookieDetected: String(cookieDetected),
     cookieTool: cookieTool ?? '',
+    // Estas dos solo las usa el prompt de es-sprint. renderPrompt sustituye únicamente los
+    // placeholders que el template trae, así que pasarlas siempre no afecta a us-webaudit.
+    frictionSignals: friction.signals.length > 0
+      ? friction.signals.map((s) => `- ${s}`).join('\n')
+      : 'No disponible: no se pudo leer el HTML de la página.',
+    pageText: extractPageText(html) || 'No disponible.',
   });
 
   const message = await trackedCompletion(client, {
@@ -187,6 +196,10 @@ async function runVisionAnalysis(
       complianceFlag: parsed.compliance_flag ?? '',
       top3Fixes: parsed.top_3_fixes ?? [],
       closingHook: parsed.closing_hook ?? '',
+      // Solo los devuelve el prompt de es-sprint; en us-webaudit quedan undefined y el
+      // campo ni siquiera se escribe en DynamoDB.
+      frictionSignals: parsed.friction_signals ?? undefined,
+      processHypothesis: parsed.process_hypothesis ?? undefined,
     };
   } catch (err) {
     console.error('analysis-worker: no se pudo parsear el JSON de Claude', raw);
@@ -201,7 +214,7 @@ export const handler = async (event: { leadId: string }): Promise<void> => {
   const lead = result.Item as LeadItem;
 
   let taskArn: string | undefined;
-  let screenshotResult: { s3Key: string; cookieDetected: boolean; cookieTool?: string } | undefined;
+  let screenshotResult: { s3Key: string; cookieDetected: boolean; cookieTool?: string; html?: string } | undefined;
 
   try {
     taskArn = await runScreenshotTask();
@@ -231,6 +244,7 @@ export const handler = async (event: { leadId: string }): Promise<void> => {
         desktopResult.status === 'fulfilled' ? desktopResult.value.score : undefined,
         screenshotResult.cookieDetected,
         screenshotResult.cookieTool,
+        screenshotResult.html,
       );
     } catch (err) {
       console.error('analysis-worker: fallo el análisis con Claude', err);

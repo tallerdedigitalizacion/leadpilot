@@ -35,6 +35,10 @@ export async function generateFollowupEmail(
     framing,
     signalBoxFormat: SIGNAL_BOX_FORMAT,
     emailFooter: emailFooterFormat({ bookingUrl, canSpamAddress }),
+    // Sueltos además del pie ya montado: las plantillas de es-sprint llevan su propio pie
+    // escrito dentro (en español y con otra oferta) y necesitan las piezas por separado.
+    bookingUrl,
+    canSpamAddress,
     reportHtml: reportHtml.slice(0, 30000),
   });
 
@@ -96,6 +100,10 @@ export async function generateEngagedFollowupEmail(
     headlineFinding,
     signalBoxFormat: SIGNAL_BOX_FORMAT,
     emailFooter: emailFooterFormat({ bookingUrl, canSpamAddress }),
+    // Sueltos además del pie ya montado: las plantillas de es-sprint llevan su propio pie
+    // escrito dentro (en español y con otra oferta) y necesitan las piezas por separado.
+    bookingUrl,
+    canSpamAddress,
     reportHtml: reportHtml.slice(0, 30000),
   });
 

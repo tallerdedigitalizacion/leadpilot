@@ -68,13 +68,23 @@ async function resizeIfTooLarge(buffer: Buffer): Promise<Buffer> {
     .toBuffer();
 }
 
-async function takeScreenshot(url: string, leadId: string): Promise<{ s3Key: string; cookieDetected: boolean; cookieTool?: string }> {
+// El HTML renderizado (después de que corra el JS) viaja junto a la captura: los widgets de
+// reserva y de chat se inyectan por script, así que un fetch plano del HTML original no los
+// vería. Se recorta por arriba para no mandar respuestas enormes por HTTP — con esto alcanza
+// de sobra para detectar los <script src> y los enlaces, que es lo que se busca.
+const MAX_HTML_CHARS = 600_000;
+
+async function takeScreenshot(url: string, leadId: string): Promise<{ s3Key: string; cookieDetected: boolean; cookieTool?: string; html?: string }> {
   const browser = await chromium.launch({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await page.goto(`https://${url}`, { waitUntil: 'load', timeout: 20000 });
 
     const { cookieDetected, cookieTool } = await dismissCookieBanner(page);
+
+    // Se lee antes de la captura porque page.screenshot con fullPage hace scroll y algunos
+    // sitios cargan cosas al hacerlo; queremos el DOM tal como lo ve quien entra.
+    const html = await page.content().then((h) => h.slice(0, MAX_HTML_CHARS)).catch(() => undefined);
 
     const rawBuffer = await page.screenshot({ fullPage: true, type: 'png' });
     const buffer = await resizeIfTooLarge(rawBuffer);
@@ -86,7 +96,7 @@ async function takeScreenshot(url: string, leadId: string): Promise<{ s3Key: str
       ContentType: 'image/png',
     }));
 
-    return { s3Key, cookieDetected, cookieTool };
+    return { s3Key, cookieDetected, cookieTool, html };
   } finally {
     await browser.close();
   }

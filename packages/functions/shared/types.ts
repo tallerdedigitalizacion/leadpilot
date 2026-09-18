@@ -39,6 +39,10 @@ export interface WebAnalysis {
   complianceFlag: string;
   top3Fixes: string[];
   closingHook: string;
+  // Solo la campaña es-sprint los produce: señales de que un proceso del negocio se lleva
+  // a mano, y la hipótesis de cuál es ese proceso.
+  frictionSignals?: string[];
+  processHypothesis?: string;
 }
 
 export type ScrapeJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';

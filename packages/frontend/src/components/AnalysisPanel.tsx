@@ -319,6 +319,24 @@ export default function AnalysisPanel({
                 </div>
               )}
 
+              {lead.webAnalysis.processHypothesis && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Proceso manual detectado</div>
+                  <p className="text-sm text-gray-800">{lead.webAnalysis.processHypothesis}</p>
+                </div>
+              )}
+
+              {lead.webAnalysis.frictionSignals && lead.webAnalysis.frictionSignals.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Señales de fricción</div>
+                  <ul className="text-sm text-gray-700 list-disc list-inside space-y-0.5">
+                    {lead.webAnalysis.frictionSignals.map((signal, i) => (
+                      <li key={i}>{signal}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {lead.webAnalysis.complianceFlag && (
                 <div>
                   <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Cumplimiento / cookies</div>

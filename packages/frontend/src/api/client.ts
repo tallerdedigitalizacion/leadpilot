@@ -149,7 +149,7 @@ export const api = {
     });
   },
 
-  startScrapeJob(input: { query: string; city: string; extractEmails: boolean; provider?: 'gosom' | 'serpapi' | 'serpapi-web' }): Promise<{ jobId: string }> {
+  startScrapeJob(input: { query: string; city: string; extractEmails: boolean; provider?: 'gosom' | 'serpapi' | 'serpapi-web'; campaignId?: string }): Promise<{ jobId: string }> {
     return request('/scrape-jobs', {
       method: 'POST',
       body: JSON.stringify(input),

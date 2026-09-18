@@ -59,7 +59,15 @@ function shortId(leadId: string): string {
 function serializeWebAnalysis(lead: LeadItem): string {
   const wa = lead.webAnalysis;
   if (!wa) return 'No disponible';
+  // Las dos primeras líneas solo aparecen en la campaña es-sprint, que es la única cuyo
+  // prompt de visión las produce. Van arriba del todo a propósito: son el argumento
+  // central de su informe, y el modelo tiende a apoyarse en lo que lee primero.
+  const friction = [
+    wa.processHypothesis ? `Proceso manual detectado: ${wa.processHypothesis}` : undefined,
+    wa.frictionSignals?.length ? `Señales de fricción: ${wa.frictionSignals.map((f, i) => `${i + 1}. ${f}`).join(' ')}` : undefined,
+  ].filter((line): line is string => line !== undefined);
   return [
+    ...friction,
     `Dolor principal: ${wa.headlinePain}`,
     `Evaluación visual: ${wa.visualAssessment}`,
     `Core Web Vitals — problemas: ${wa.performanceSummary.coreWebVitalsIssues.join('; ') || 'ninguno detectado'}`,
@@ -82,6 +90,7 @@ async function generateReportHtml(client: Anthropic, lead: LeadItem): Promise<st
     id,
     date,
     categoryTag: lead.category ? `${lead.category} (verde)` : '',
+    category: lead.category ?? 'N/A',
     mPerformance: String(m?.performance ?? 'N/A'),
     mLcp: m?.lcp !== undefined ? `${m.lcp}s` : 'N/A',
     mTbt: m?.tbt !== undefined ? `${m.tbt}ms` : 'N/A',

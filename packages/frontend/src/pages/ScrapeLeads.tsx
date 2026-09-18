@@ -2,11 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import type { ScrapeJob } from '../types/lead';
+import { CAMPAIGNS, DEFAULT_CAMPAIGN_ID, type CampaignId } from '../constants/campaigns';
 
 export default function ScrapeLeads() {
   const [query, setQuery] = useState('');
   const [city, setCity] = useState('');
   const [provider, setProvider] = useState<'gosom' | 'serpapi' | 'serpapi-web'>('gosom');
+  const [campaignId, setCampaignId] = useState<CampaignId>(DEFAULT_CAMPAIGN_ID);
   const [extractEmails, setExtractEmails] = useState(false);
   const [job, setJob] = useState<ScrapeJob | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,7 @@ export default function ScrapeLeads() {
         city: city.trim(),
         extractEmails,
         provider,
+        campaignId,
       });
       setJob({
         jobId,
@@ -106,6 +109,19 @@ export default function ScrapeLeads() {
               onChange={(e) => setCity(e.target.value)}
               placeholder="Dallas, TX"
             />
+            <div>
+              <label className="text-xs font-medium text-gray-600 mb-1 block">Campaña</label>
+              <select
+                value={campaignId}
+                onChange={(e) => setCampaignId(e.target.value as CampaignId)}
+                className="w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+              >
+                {CAMPAIGNS.map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Define el idioma del mensaje, el remitente y el link de reserva.</p>
+            </div>
             <div>
               <label className="text-xs font-medium text-gray-600 mb-1 block">Proveedor</label>
               <select
