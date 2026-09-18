@@ -1,7 +1,8 @@
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm';
+import type { TimelineEvent } from '../shared/types';
 import { verifyToken } from '../shared/tracking';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
@@ -35,8 +36,15 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const result = await ddb.send(new GetCommand({ TableName: TABLE, Key: { leadId } }));
   if (!result.Item) return json(404, { error: 'This link is no longer valid.' });
 
-  return json(200, {
-    businessName: typeof result.Item.businessName === 'string' ? result.Item.businessName : undefined,
-    email: typeof result.Item.email === 'string' ? result.Item.email : undefined,
-  });
+  const now = Date.now();
+  const event_: TimelineEvent = { at: now, event: 'UNSUBSCRIBED', by: 'system' };
+
+  await ddb.send(new UpdateCommand({
+    TableName: TABLE,
+    Key: { leadId },
+    UpdateExpression: 'SET unsubscribed = :true, unsubscribedAt = :now, timeline = list_append(timeline, :event)',
+    ExpressionAttributeValues: { ':true': true, ':now': now, ':event': [event_] },
+  }));
+
+  return json(200, { unsubscribed: true });
 };

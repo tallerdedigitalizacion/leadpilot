@@ -32,6 +32,52 @@ abajo). Sigue pendiente decidir:
   no que la campaña esté activa hoy (puede haber falsos positivos de campañas viejas sin
   desactivar) — aun así, margen de error más chico que la heurística actual de SerpApi.
 
+## Mejoras de AI engineering (portfolio + calidad real) — evaluado 2026-07-26
+
+LeadPilot ya es un caso de estudio real de producción con LLMs (pipeline con criterio de
+costo por tarea, datos reales, no un notebook de Kaggle) — pero le faltan piezas
+específicas del vocabulario/prácticas de "AI engineering" para funcionar como caso
+defendible en entrevista. No son cosmética: la #1 en particular resuelve un problema que
+ya mordió al proyecto (ver más abajo). Orden de prioridad acordado con Pablo, de mayor a
+menor señal/esfuerzo:
+
+1. **Evals** (siguiente paso elegido). Set de 20-30 casos con criterio de éxito medible
+   por código o por un segundo call de Claude como juez — no "lo probé y parece que anda".
+   Caso de prueba real ya disponible: el bug de las 4 prompts (`generate-report`,
+   `regenerate-email`, footer de follow-ups) que asumían que el negocio paga por Google
+   Ads sin ninguna evidencia — encontrado y arreglado a mano el 2026-07-25 tras un reporte
+   de Pablo, no por ningún proceso sistemático. Un eval con un criterio tipo "¿el email
+   menciona ads sin que `webAnalysis`/`sponsored` lo respalde?" lo hubiera atrapado antes
+   de llegar a producción. Construir el set sobre datos reales ya en DynamoDB
+   (`webAnalysis` + `emailBody`/`emailSubject` de leads existentes), no sintéticos.
+
+2. **Prompt versioning + logging estructurado**. Hoy cero trazabilidad: ningún registro de
+   qué prompt/versión/modelo generó qué output, sin costo ni latencia capturados, en
+   ninguno de los 5 sitios de llamada a Claude (`generate-report/index.ts` ×3 — reporte,
+   email, LinkedIn —, `regenerate-email/index.ts` ×2, `shared/followup-email.ts` vía
+   `followup-sequencer`/`simulate-followup`). Tabla DynamoDB chica
+   (`promptId`, `version`, `model`, `inputSummary`, `output`, `tokensIn/Out`, `costUsd`,
+   `latencyMs`, `at`) alcanza. Prerequisito real del ítem 1: sin esto no se pueden comparar
+   variantes de prompt de forma rigurosa.
+
+3. **Tool use / function calling**. Formalizar como tool calls con output estructurado dos
+   decisiones que hoy son heurística ad-hoc en el código, no algo que decida el LLM con
+   criterio explícito:
+   - Señal de "el negocio paga por publicidad" — sigue sin resolverse de forma confiable,
+     ver ítem 1 de "Pendiente" arriba y la alternativa evaluada (detectar tag `AW-` en el
+     sitio).
+   - Clasificación bot-vs-humano de un click de email — hoy es análisis manual de
+     timestamps (caso real: el flujo de unsubscribe del 2026-07-24, donde se identificó a
+     mano que 7 de 10 "engaged" eran en realidad escáneres de seguridad corporativos por el
+     timing entre click y unsubscribe, no por ningún clasificador).
+
+4. **RAG real** (no "Pinecone como key-value store"). Embeddings + retrieval semántico
+   sobre los leads existentes (~80, con `webAnalysis` estructurado y resultado real:
+   SENT/ENGAGED/BOOKED) para, al generar el email de un lead nuevo, recuperar los 2-3 leads
+   pasados más similares que sí generaron engagement e inyectar su ángulo como few-shot.
+   Volumen bajo hoy — tener lista la justificación de "por qué vector search y no un query
+   SQL directo a esta escala" para cuando lo pregunten en entrevista.
+
 ## Completado (2026-07-21)
 
 Estos 4 puntos, pedidos junto con el ítem 1 de arriba, ya están implementados y

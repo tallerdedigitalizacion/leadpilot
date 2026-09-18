@@ -15,6 +15,8 @@ interface ApiProps {
   table: dynamodb.Table;
   sendCountersTable: dynamodb.Table;
   scrapeJobsTable: dynamodb.Table;
+  promptsTable: dynamodb.Table;
+  llmLogsTable: dynamodb.Table;
   reportsBucket: s3.Bucket;
   ingestApiKey: string;
   frontendUrl?: string;
@@ -30,7 +32,7 @@ export class Api extends Construct {
   constructor(scope: Construct, id: string, props: ApiProps) {
     super(scope, id);
 
-    const { table, sendCountersTable, scrapeJobsTable, reportsBucket, scraping } = props;
+    const { table, sendCountersTable, scrapeJobsTable, promptsTable, llmLogsTable, reportsBucket, scraping } = props;
 
     const anthropicKeyParam = ssm.StringParameter.fromSecureStringParameterAttributes(
       this,
@@ -94,6 +96,8 @@ export class Api extends Construct {
       SES_FROM_EMAIL: 'info@tallerdedigitalizacion.com',
       SES_REGION: 'eu-west-1',
       INGEST_API_KEY: props.ingestApiKey,
+      PROMPTS_TABLE_NAME: promptsTable.tableName,
+      LLM_LOGS_TABLE_NAME: llmLogsTable.tableName,
     };
 
     const fnEntry = (name: string) =>
@@ -160,6 +164,8 @@ export class Api extends Construct {
     reportsBucket.grantReadWrite(reportFn);
     anthropicKeyParam.grantRead(reportFn);
     trackingSecretParam.grantRead(reportFn);
+    promptsTable.grantReadData(reportFn);
+    llmLogsTable.grantWriteData(reportFn);
     sendCountersTable.grantReadWriteData(reportFn);
     sharedDailyCapParamRef.grantRead(reportFn);
     linkedinDailyCapParamRef.grantRead(reportFn);
@@ -195,6 +201,8 @@ export class Api extends Construct {
     table.grantReadWriteData(analysisWorkerFn);
     reportsBucket.grantRead(analysisWorkerFn);
     anthropicKeyParam.grantRead(analysisWorkerFn);
+    promptsTable.grantReadData(analysisWorkerFn);
+    llmLogsTable.grantWriteData(analysisWorkerFn);
     scraping.screenshotTaskTokenParam.grantRead(analysisWorkerFn);
     reportFn.grantInvoke(analysisWorkerFn);
     scraping.screenshotTaskDef.grantRun(analysisWorkerFn);
@@ -354,12 +362,15 @@ export class Api extends Construct {
         ...commonEnv,
         ...trackingEnv,
         ANTHROPIC_API_KEY_PARAM: '/leadpilot/anthropic-api-key',
+        FRONTEND_URL: props.frontendUrl ? `https://${props.frontendUrl}` : '',
       },
     });
     table.grantReadWriteData(regenerateEmailFn);
     reportsBucket.grantRead(regenerateEmailFn);
     anthropicKeyParam.grantRead(regenerateEmailFn);
     trackingSecretParam.grantRead(regenerateEmailFn);
+    promptsTable.grantReadData(regenerateEmailFn);
+    llmLogsTable.grantWriteData(regenerateEmailFn);
 
     // ── get-stats ─────────────────────────────────────────────────────────────
     const getStatsFn = new nodejs.NodejsFunction(this, 'GetStats', {
@@ -384,6 +395,7 @@ export class Api extends Construct {
         ...commonEnv,
         ...trackingEnv,
         ANTHROPIC_API_KEY_PARAM: '/leadpilot/anthropic-api-key',
+        FRONTEND_URL: props.frontendUrl ? `https://${props.frontendUrl}` : '',
         SEND_COUNTERS_TABLE_NAME: sendCountersTable.tableName,
         SHARED_DAILY_CAP_PARAM: '/leadpilot/daily-send-cap',
       },
@@ -392,6 +404,8 @@ export class Api extends Construct {
     sendCountersTable.grantReadWriteData(this.followupSequencerFn);
     reportsBucket.grantRead(this.followupSequencerFn);
     anthropicKeyParam.grantRead(this.followupSequencerFn);
+    promptsTable.grantReadData(this.followupSequencerFn);
+    llmLogsTable.grantWriteData(this.followupSequencerFn);
     trackingSecretParam.grantRead(this.followupSequencerFn);
     sharedDailyCapParamRef.grantRead(this.followupSequencerFn);
     this.followupSequencerFn.addToRolePolicy(
@@ -414,12 +428,15 @@ export class Api extends Construct {
         ...commonEnv,
         ...trackingEnv,
         ANTHROPIC_API_KEY_PARAM: '/leadpilot/anthropic-api-key',
+        FRONTEND_URL: props.frontendUrl ? `https://${props.frontendUrl}` : '',
       },
     });
     table.grantReadWriteData(simulateFollowupFn);
     reportsBucket.grantRead(simulateFollowupFn);
     anthropicKeyParam.grantRead(simulateFollowupFn);
     trackingSecretParam.grantRead(simulateFollowupFn);
+    promptsTable.grantReadData(simulateFollowupFn);
+    llmLogsTable.grantWriteData(simulateFollowupFn);
     simulateFollowupFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['ses:SendEmail'],
@@ -447,7 +464,8 @@ export class Api extends Construct {
     reportsBucket.grantRead(trackClickFn);
     trackingSecretParam.grantRead(trackClickFn);
 
-    // ── unsubscribe (sin auth) ─────────────────────────────────────────────────
+    // ── unsubscribe (sin auth) — solo lectura, sirve datos del lead para que el
+    //    frontend muestre la página de confirmación; no muta nada en el GET ────────
     const unsubscribeFn = new nodejs.NodejsFunction(this, 'Unsubscribe', {
       ...commonProps,
       functionName: 'leadpilot-unsubscribe',
@@ -458,8 +476,23 @@ export class Api extends Construct {
         ...trackingEnv,
       },
     });
-    table.grantReadWriteData(unsubscribeFn);
+    table.grantReadData(unsubscribeFn);
     trackingSecretParam.grantRead(unsubscribeFn);
+
+    // ── unsubscribe-confirm (sin auth) — mutación real, el frontend la llama solo
+    //    tras un click explícito del usuario, nunca desde el GET inicial ──────────
+    const unsubscribeConfirmFn = new nodejs.NodejsFunction(this, 'UnsubscribeConfirm', {
+      ...commonProps,
+      functionName: 'leadpilot-unsubscribe-confirm',
+      entry: fnEntry('unsubscribe-confirm'),
+      handler: 'handler',
+      environment: {
+        ...commonEnv,
+        ...trackingEnv,
+      },
+    });
+    table.grantReadWriteData(unsubscribeConfirmFn);
+    trackingSecretParam.grantRead(unsubscribeConfirmFn);
 
     // ── calcom-webhook (sin x-api-key, auth vía firma HMAC de Cal.com) ─────────
     const calcomWebhookFn = new nodejs.NodejsFunction(this, 'CalcomWebhook', {
@@ -571,6 +604,7 @@ export class Api extends Construct {
     this.httpApi.addRoutes({ path: '/stats', methods: [apigwv2.HttpMethod.GET], integration: r(getStatsFn) });
     this.httpApi.addRoutes({ path: '/r/{leadId}', methods: [apigwv2.HttpMethod.GET], integration: r(trackClickFn) });
     this.httpApi.addRoutes({ path: '/u/{leadId}', methods: [apigwv2.HttpMethod.GET], integration: r(unsubscribeFn) });
+    this.httpApi.addRoutes({ path: '/u/{leadId}/confirm', methods: [apigwv2.HttpMethod.POST], integration: r(unsubscribeConfirmFn) });
     this.httpApi.addRoutes({ path: '/webhooks/calcom', methods: [apigwv2.HttpMethod.POST], integration: r(calcomWebhookFn) });
     this.httpApi.addRoutes({ path: '/scrape-jobs', methods: [apigwv2.HttpMethod.POST], integration: r(scrapeJobsFn) });
     this.httpApi.addRoutes({ path: '/scrape-jobs/{jobId}', methods: [apigwv2.HttpMethod.GET], integration: r(getScrapeJobFn) });

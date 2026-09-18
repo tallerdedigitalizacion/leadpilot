@@ -146,7 +146,7 @@ export const api = {
     });
   },
 
-  startScrapeJob(input: { query: string; city: string; extractEmails: boolean; provider?: 'gosom' | 'serpapi' }): Promise<{ jobId: string }> {
+  startScrapeJob(input: { query: string; city: string; extractEmails: boolean; provider?: 'gosom' | 'serpapi' | 'serpapi-web' }): Promise<{ jobId: string }> {
     return request('/scrape-jobs', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -155,5 +155,13 @@ export const api = {
 
   getScrapeJob(jobId: string): Promise<ScrapeJob> {
     return request(`/scrape-jobs/${jobId}`);
+  },
+
+  getUnsubscribeInfo(leadId: string, token: string): Promise<{ businessName?: string; email?: string }> {
+    return request(`/u/${leadId}?t=${encodeURIComponent(token)}`);
+  },
+
+  confirmUnsubscribe(leadId: string, token: string): Promise<{ unsubscribed: boolean }> {
+    return request(`/u/${leadId}/confirm?t=${encodeURIComponent(token)}`, { method: 'POST' });
   },
 };

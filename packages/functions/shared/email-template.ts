@@ -18,7 +18,7 @@ export function emailFooterFormat(opts: { bookingUrl: string; canSpamAddress: st
 
 <p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Worth 30 minutes? <a href="${opts.bookingUrl}" style="color:#4338CA;">Book a free call here</a></p>
 
-<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Free 30-min call to find out exactly what's slowing your site down and what it's costing you in ad spend.<br>
+<p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Free 30-min call to find out exactly what's costing you visitors and conversions, and what to do about it.<br>
 No pitch, no commitment. If I don't see a clear problem I can fix, I'll tell you straight.</p>
 
 <p style="font-size:14px;line-height:1.65;color:#1A1A1A;margin-bottom:16px;">Or learn more about the <a href="https://tallerdedigitalizacion.com/en/web-audit/" style="color:#4338CA;">Web Audit service &rarr;</a></p>

@@ -1,9 +1,10 @@
-import { Routes, Route, NavLink, Link, useSearchParams } from 'react-router-dom';
+import { Routes, Route, NavLink, Link, useSearchParams, useLocation } from 'react-router-dom';
 import LeadList from './pages/LeadList';
 import LeadDetail from './pages/LeadDetail';
 import AddLead from './pages/AddLead';
 import Dashboard from './pages/Dashboard';
 import ScrapeLeads from './pages/ScrapeLeads';
+import Unsubscribe from './pages/Unsubscribe';
 import type { LeadStatus } from './types/lead';
 
 const NAV_STATUSES: { label: string; status: LeadStatus }[] = [
@@ -55,22 +56,28 @@ function Nav() {
 }
 
 export default function App() {
+  const location = useLocation();
+  const isPublicPage = location.pathname.startsWith('/unsubscribe');
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-brand text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold tracking-tight">LeadPilot</Link>
-          <Nav />
-        </div>
-      </header>
+      {!isPublicPage && (
+        <header className="bg-brand text-white shadow-md">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <Link to="/" className="text-xl font-bold tracking-tight">LeadPilot</Link>
+            <Nav />
+          </div>
+        </header>
+      )}
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
+      <main className={isPublicPage ? '' : 'max-w-7xl mx-auto px-4 py-6'}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/leads" element={<LeadList />} />
           <Route path="/leads/new" element={<AddLead />} />
           <Route path="/leads/:leadId" element={<LeadDetail />} />
           <Route path="/scrape" element={<ScrapeLeads />} />
+          <Route path="/unsubscribe/:leadId" element={<Unsubscribe />} />
         </Routes>
       </main>
     </div>

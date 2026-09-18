@@ -6,6 +6,8 @@ export interface ScrapedLead {
   city?: string;
   category?: string;
   sponsored?: boolean;
+  leadSource?: 'maps' | 'serp';
+  vertical?: string;
 }
 
 export interface ProviderResult {

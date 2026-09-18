@@ -23,6 +23,7 @@ const COUNTERS_TABLE = process.env.SEND_COUNTERS_TABLE_NAME!;
 const BUCKET = process.env.REPORTS_BUCKET_NAME!;
 const FROM_EMAIL = process.env.SES_FROM_EMAIL!;
 const TRACKING_BASE_URL = process.env.TRACKING_BASE_URL ?? '';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 const CAN_SPAM_ADDRESS = process.env.CAN_SPAM_ADDRESS ?? '[dirección física pendiente]';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -56,7 +57,7 @@ async function getTrackingSecret(): Promise<string> {
 
 async function buildLinks(lead: LeadItem) {
   const secret = await getTrackingSecret();
-  return buildFollowupLinks(lead, TRACKING_BASE_URL, secret);
+  return buildFollowupLinks(lead, TRACKING_BASE_URL, FRONTEND_URL, secret);
 }
 
 async function queryAllByStatus(status: LeadStatus): Promise<LeadItem[]> {
@@ -153,7 +154,7 @@ export const handler = async (): Promise<void> => {
         const reportHtml = await s3Result.Body?.transformToString() ?? '';
         const client = await getAnthropicClient();
         const { trackingUrl, unsubscribeUrl, bookingUrl } = await buildLinks(lead);
-        const emailData = await generateFollowupEmail(client, reportHtml, threshold.followupNumber, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
+        const emailData = await generateFollowupEmail(client, lead.leadId, reportHtml, threshold.followupNumber, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
         subject = emailData.subject;
         body = emailData.body;
 

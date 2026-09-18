@@ -11,6 +11,8 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import Anthropic from '@anthropic-ai/sdk';
 import type { LeadItem, PageSpeedScore, TimelineEvent, WebAnalysis } from '../shared/types';
 import { fetchPageSpeed } from '../shared/pagespeed';
+import { getActivePrompt, renderPrompt } from '../shared/prompt-store';
+import { trackedCompletion } from '../shared/llm-client';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 const ecs = new ECSClient({});
@@ -139,33 +141,21 @@ async function runVisionAnalysis(
   cookieDetected: boolean,
   cookieTool: string | undefined,
 ): Promise<WebAnalysis | undefined> {
-  const systemPrompt = `Eres un consultor senior de marketing digital y desarrollo web que audita sitios de pequeños y medianos negocios para un servicio de prospección B2B. El negocio auditado ya invierte en anuncios pagados (Google/Meta Ads) para atraer tráfico a su web, así que el ángulo del reporte debe conectar los problemas técnicos y visuales del sitio con el desperdicio de ese gasto publicitario: tráfico pagado que no convierte por fricción en el sitio.
+  const { content: template, systemPrompt, version } = await getActivePrompt('vision-analysis');
+  const userText = renderPrompt(template, {
+    businessName: lead.businessName,
+    category: lead.category ?? 'no especificada',
+    city: lead.city ?? 'no especificada',
+    pagespeedMobile: JSON.stringify(pagespeedMobile ?? 'no disponible'),
+    pagespeedDesktop: JSON.stringify(pagespeedDesktop ?? 'no disponible'),
+    cookieDetected: String(cookieDetected),
+    cookieTool: cookieTool ?? '',
+  });
 
-REGLAS DE EVIDENCIA (obligatorias):
-- Cada afirmación debe estar anclada en un dato concreto de los inputs: cita la cifra exacta de PageSpeed o describe lo que ves literalmente en la captura.
-- Nunca inventes funcionalidades, cifras o problemas que no puedas verificar con los datos entregados.
-- Si un dato no está disponible, dilo explícitamente en vez de asumir o rellenar.
-- Cero relleno genérico tipo "en la era digital de hoy..." o superlativos vacíos ("increíble", "espectacular").
-- Tono consultivo y directo, como un experto que ya miró el sitio, no como una plantilla de marketing.
-- Máximo 250 palabras combinando todos los campos de texto.
-
-Responde ÚNICAMENTE con este JSON, sin texto antes ni después, sin backticks de markdown:
-{
-  "headline_pain": "",
-  "visual_assessment": "",
-  "performance_summary": { "mobile_score": 0, "desktop_score": 0, "core_web_vitals_issues": [] },
-  "compliance_flag": "",
-  "top_3_fixes": [],
-  "closing_hook": ""
-}`;
-
-  const userText = `Analiza el sitio web de ${lead.businessName}, categoría ${lead.category ?? 'no especificada'}, ubicado en ${lead.city ?? 'no especificada'}.
-
-Datos PageSpeed Insights (móvil): ${JSON.stringify(pagespeedMobile ?? 'no disponible')}
-Datos PageSpeed Insights (escritorio): ${JSON.stringify(pagespeedDesktop ?? 'no disponible')}
-Detección de gestor de cookies: ${cookieDetected} ${cookieTool ?? ''}`;
-
-  const message = await client.messages.create({
+  const message = await trackedCompletion(client, {
+    promptId: 'vision-analysis',
+    promptVersion: version,
+    leadId: lead.leadId,
     model: 'claude-sonnet-4-6',
     max_tokens: 1200,
     system: systemPrompt,

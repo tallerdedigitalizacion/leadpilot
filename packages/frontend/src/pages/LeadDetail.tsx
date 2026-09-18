@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import StatusBadge from '../components/StatusBadge';
 import SponsoredBadge from '../components/SponsoredBadge';
+import LeadSourceBadge from '../components/LeadSourceBadge';
 import Timeline from '../components/Timeline';
 import AnalysisPanel from '../components/AnalysisPanel';
 import ResourcesPanel from '../components/ResourcesPanel';
@@ -149,6 +150,7 @@ export default function LeadDetail() {
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {lead.sponsored && <SponsoredBadge />}
+            {lead.leadSource && <LeadSourceBadge source={lead.leadSource} />}
             <StatusBadge status={lead.status} />
             {canArchive && (
               <button
@@ -177,6 +179,9 @@ export default function LeadDetail() {
           )}
           {lead.category && (
             <div><span className="text-gray-400 text-xs block">Sector</span>{lead.category}</div>
+          )}
+          {lead.vertical && (
+            <div><span className="text-gray-400 text-xs block">Vertical</span>{lead.vertical}</div>
           )}
           {lead.phone && (
             <div><span className="text-gray-400 text-xs block">Teléfono</span>

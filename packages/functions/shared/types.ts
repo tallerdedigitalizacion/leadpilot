@@ -42,7 +42,7 @@ export interface WebAnalysis {
 }
 
 export type ScrapeJobStatus = 'PENDING' | 'RUNNING' | 'DONE' | 'FAILED';
-export type ScrapeProvider = 'gosom' | 'serpapi';
+export type ScrapeProvider = 'gosom' | 'serpapi' | 'serpapi-web';
 
 export interface ScrapeJob {
   jobId: string;
@@ -70,6 +70,8 @@ export interface LeadItem {
   city?: string;
   category?: string;
   sponsored?: boolean;
+  leadSource?: 'maps' | 'serp';
+  vertical?: string;
   createdAt: number;
   qualifiedAt?: number;
   analyzedAt?: number;

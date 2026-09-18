@@ -23,6 +23,8 @@ export class LeadPilotStack extends cdk.Stack {
       table: database.table,
       sendCountersTable: database.sendCountersTable,
       scrapeJobsTable: database.scrapeJobsTable,
+      promptsTable: database.promptsTable,
+      llmLogsTable: database.llmLogsTable,
       reportsBucket: storage.reportsBucket,
       ingestApiKey: process.env.INGEST_API_KEY ?? 'change-me-before-deploy',
       frontendUrl: frontend.distribution.domainName,
@@ -34,12 +36,14 @@ export class LeadPilotStack extends cdk.Stack {
     new events.Rule(this, 'FollowupSequencerRule', {
       schedule: events.Schedule.rate(cdk.Duration.days(1)),
       targets: [new targets.LambdaFunction(api.followupSequencerFn)],
+      enabled: false, // Pausado 2026-08-02: sin conversión (0 reservas / 101 contactados) — ver TODO.md
     });
 
     // EventBridge rule: alimenta el funnel solo, una búsqueda ciudad+rubro al azar por día
     new events.Rule(this, 'AutoScrapeSchedulerRule', {
       schedule: events.Schedule.rate(cdk.Duration.days(1)),
       targets: [new targets.LambdaFunction(api.autoScrapeSchedulerFn)],
+      enabled: false, // Pausado 2026-08-02: sin conversión (0 reservas / 101 contactados) — ver TODO.md
     });
 
     // Outputs

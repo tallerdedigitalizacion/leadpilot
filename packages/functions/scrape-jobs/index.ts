@@ -41,7 +41,9 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   const job: ScrapeJob = {
     jobId,
     status: 'PENDING',
-    provider: body.provider === 'serpapi' ? 'serpapi' : 'gosom',
+    provider: body.provider === 'serpapi' ? 'serpapi'
+      : body.provider === 'serpapi-web' ? 'serpapi-web'
+      : 'gosom',
     query: body.query,
     city: body.city,
     extractEmails: body.extractEmails ?? false,

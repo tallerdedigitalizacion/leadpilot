@@ -22,6 +22,7 @@ const TABLE = process.env.LEADS_TABLE_NAME!;
 const BUCKET = process.env.REPORTS_BUCKET_NAME!;
 const FROM_EMAIL = process.env.SES_FROM_EMAIL!;
 const TRACKING_BASE_URL = process.env.TRACKING_BASE_URL ?? '';
+const FRONTEND_URL = process.env.FRONTEND_URL ?? '';
 const CAN_SPAM_ADDRESS = process.env.CAN_SPAM_ADDRESS ?? '[dirección física pendiente]';
 
 const FROM_STATUS: Record<1 | 2, LeadStatus> = { 1: 'SENT', 2: 'FOLLOWUP_1' };
@@ -66,9 +67,9 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
   ]);
   const reportHtml = await s3Result.Body?.transformToString() ?? '';
   const client = new Anthropic({ apiKey: anthropicParam.Parameter!.Value! });
-  const { trackingUrl, unsubscribeUrl, bookingUrl } = buildLinks(lead, TRACKING_BASE_URL, trackingSecretParam.Parameter!.Value!);
+  const { trackingUrl, unsubscribeUrl, bookingUrl } = buildLinks(lead, TRACKING_BASE_URL, FRONTEND_URL, trackingSecretParam.Parameter!.Value!);
 
-  const emailData = await generateFollowupEmail(client, reportHtml, followupNumber, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
+  const emailData = await generateFollowupEmail(client, lead.leadId, reportHtml, followupNumber, trackingUrl, unsubscribeUrl, bookingUrl, CAN_SPAM_ADDRESS);
 
   const now = Date.now();
   try {

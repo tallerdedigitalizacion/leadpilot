@@ -12,12 +12,6 @@ export class Storage extends Construct {
       bucketName: `leadpilot-reports-${cdk.Stack.of(this).account}`,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
-      lifecycleRules: [
-        {
-          // Elimina PDFs viejos para ahorrar costos
-          expiration: cdk.Duration.days(90),
-        },
-      ],
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
   }

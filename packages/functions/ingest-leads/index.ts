@@ -25,7 +25,7 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
     return respond(403, { error: 'Forbidden' });
   }
 
-  let body: { leads: Array<{ businessName: string; url: string; phone?: string; email?: string; city?: string; category?: string; sponsored?: boolean }> };
+  let body: { leads: Array<{ businessName: string; url: string; phone?: string; email?: string; city?: string; category?: string; sponsored?: boolean; leadSource?: 'maps' | 'serp'; vertical?: string }> };
   try {
     body = JSON.parse(event.body ?? '{}');
   } catch {
@@ -76,6 +76,8 @@ export const handler = async (event: APIGatewayProxyEventV2): Promise<APIGateway
       city: lead.city,
       category: lead.category,
       sponsored: lead.sponsored,
+      leadSource: lead.leadSource,
+      vertical: lead.vertical,
       createdAt: now,
       timeline: [ingestedEvent, qualifiedEvent],
     };

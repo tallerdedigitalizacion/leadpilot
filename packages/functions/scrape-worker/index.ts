@@ -6,6 +6,7 @@ import type { ScrapeJob } from '../shared/types';
 import type { ScrapedLead, ProviderResult } from './types';
 import { runGosomScrape } from './gosom-provider';
 import { runSerpApiScrape } from './serpapi-provider';
+import { runSerpApiWebScrape } from './serpapi-web-provider';
 
 const ddb = DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } });
 
@@ -54,6 +55,8 @@ export const handler = async (event: { jobId: string }): Promise<void> => {
   try {
     const providerResult: ProviderResult = job.provider === 'serpapi'
       ? await runSerpApiScrape(job)
+      : job.provider === 'serpapi-web'
+      ? await runSerpApiWebScrape(job)
       : await runGosomScrape(job);
 
     const { created, skipped } = await ingestLeads(providerResult.leads);

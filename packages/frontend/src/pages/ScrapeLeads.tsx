@@ -6,7 +6,7 @@ import type { ScrapeJob } from '../types/lead';
 export default function ScrapeLeads() {
   const [query, setQuery] = useState('');
   const [city, setCity] = useState('');
-  const [provider, setProvider] = useState<'gosom' | 'serpapi'>('gosom');
+  const [provider, setProvider] = useState<'gosom' | 'serpapi' | 'serpapi-web'>('gosom');
   const [extractEmails, setExtractEmails] = useState(false);
   const [job, setJob] = useState<ScrapeJob | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,11 +110,12 @@ export default function ScrapeLeads() {
               <label className="text-xs font-medium text-gray-600 mb-1 block">Proveedor</label>
               <select
                 value={provider}
-                onChange={(e) => setProvider(e.target.value as 'gosom' | 'serpapi')}
+                onChange={(e) => setProvider(e.target.value as 'gosom' | 'serpapi' | 'serpapi-web')}
                 className="w-full border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand"
               >
                 <option value="gosom">Google Maps Scraper (propio)</option>
                 <option value="serpapi">SerpApi (solo patrocinados)</option>
+                <option value="serpapi-web">SerpApi — búsqueda web (piloto verticales digitales)</option>
               </select>
             </div>
             <label className="flex items-center gap-2 cursor-pointer text-sm text-gray-700">
