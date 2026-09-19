@@ -7,6 +7,31 @@
 
 ## Pendiente
 
+### 0. PRODUCCIÓN APAGADA — leer esto antes de tocar nada
+Estado al 2026-09-18. Nada del pipeline corre solo. Dos cerrojos independientes:
+
+- **Los dos crons de EventBridge están desactivados desde el 2026-08-02**
+  (`enabled: false` en [`leadpilot-stack.ts`](packages/infra/lib/leadpilot-stack.ts), con el
+  motivo en el comentario: *sin conversión, 0 reservas de 101 contactados*). Ese motivo
+  nunca llegó a este archivo pese a que el comentario dice "ver TODO.md" — queda aquí ahora.
+- **Las dos campañas tienen `active: false`** en
+  [`shared/campaigns.ts`](packages/functions/shared/campaigns.ts) (`us-webaudit` apagada el
+  2026-09-18 a petición de Pablo; `es-sprint` nunca llegó a encenderse).
+
+Para volver a encender hay que deshacer **los dos**: `enabled: true` en las reglas y
+`active: true` en la campaña que toque. Uno solo no basta, y es a propósito.
+
+Lo que sigue en pie y sí puede mandar emails **si alguien lo dispara a mano**: la HTTP API
+completa (`POST /leads` encadena ingest → análisis → informe → **envío automático**;
+`POST /leads/{id}/send` y `/report` también), el frontend de CloudFront, y SES. Si se quiere
+que sea imposible enviar aunque se pulse un botón, hay que añadir un interruptor explícito:
+el parámetro `/leadpilot/daily-send-cap` **no sirve** para eso, porque `getSharedDailyCap`
+descarta cualquier valor ≤ 0 y cae al default de 20.
+
+Los 0 de 101 son el argumento de fondo del rediseño de oferta de esta sesión (campaña
+`es-sprint`): el problema no era el volumen, era qué se vendía y a quién.
+
+
 ### 1. Volver a exigir solo patrocinados (revertir el filtro relajado)
 Contexto: el 2026-07-05 se relajó a propósito el filtro de `serpapi-provider.ts` para
 generar volumen mientras Pablo estaba de vacaciones (ver sección "Decisiones temporales"

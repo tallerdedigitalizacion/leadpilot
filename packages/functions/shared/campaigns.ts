@@ -46,7 +46,10 @@ export const DEFAULT_CAMPAIGN_ID = 'us-webaudit';
 const US_WEBAUDIT: CampaignConfig = {
   campaignId: 'us-webaudit',
   label: 'Auditoría web — EEUU',
-  active: true,
+  // Apagada 2026-09-18 a petición de Pablo. Segundo cerrojo, además de los crons de
+  // EventBridge que están desactivados desde el 2026-08-02: aunque alguien reactive el cron,
+  // activeCampaigns() devuelve vacío y el scheduler no lanza ningún job.
+  active: false,
   language: 'en',
   locale: { gl: 'us', hl: 'en', googleDomain: 'google.com' },
   fromEmail: 'info@tallerdedigitalizacion.com',
